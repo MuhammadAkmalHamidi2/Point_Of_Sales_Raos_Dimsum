@@ -1,110 +1,92 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import axios from "axios";
+
 import KasirHeader from "@/components/kasir/KasirHeader";
 
 // =====================================================
-// DATA DUMMY PRODUK
+// API
 // =====================================================
 
-const products = [
-  {
-    id: "dimsum",
-    name: "Dimsum",
-    price: 25000,
-    description:
-      "Dimsum lembut dengan isian ayam pilihan, disajikan hangat dengan saus pilihan.",
-    icon: "🥟",
-
-    pcs: [4, 6, 16],
-
-    options: [
-      {
-        id: "sauce",
-        name: "Saus",
-        values: [
-          {
-            id: "mentai",
-            name: "Saus Mentai",
-          },
-          {
-            id: "tar-tar",
-            name: "Saus Tar-Tar",
-          },
-          {
-            id: "brullee",
-            name: "Saus Brullee",
-          },
-          {
-            id: "hot-volcano",
-            name: "Saus Hot Volcano",
-          },
-          {
-            id: "original",
-            name: "Original",
-          },
-        ],
-      },
-    ],
-  },
-
-  {
-    id: "siomay",
-    name: "Siomay",
-    price: 22000,
-    description:
-      "Siomay ayam dengan tekstur lembut dan rasa gurih yang cocok untuk semua kalangan.",
-    icon: "🥟",
-
-    pcs: [4, 6, 16],
-
-    options: [
-      {
-        id: "sauce",
-        name: "Saus",
-        values: [
-          {
-            id: "mentai",
-            name: "Saus Mentai",
-          },
-          {
-            id: "tar-tar",
-            name: "Saus Tar-Tar",
-          },
-          {
-            id: "brullee",
-            name: "Saus Brullee",
-          },
-          {
-            id: "hot-volcano",
-            name: "Saus Hot Volcano",
-          },
-          {
-            id: "original",
-            name: "Original",
-          },
-        ],
-      },
-    ],
-  },
-];
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // =====================================================
-// TYPE CART
+// TYPE
+// =====================================================
+
+type Category = {
+  id: number;
+  name: string;
+};
+
+type Product = {
+  id: number;
+  namaProduk: string;
+  keterangan: string | null;
+  harga: number;
+  categoryId: number;
+  produkImg: string | null;
+  createdAt: string;
+  updatedAt: string;
+  category: Category;
+};
+
+type ProductResponse = {
+  success: boolean;
+  message: string;
+  data: Product;
+};
+
+// =====================================================
+// CART TYPE
 // =====================================================
 
 type CartItem = {
   id: string;
-  productId: string;
+  productId: number;
   name: string;
   price: number;
   pcs: number;
   pax: number;
   sauce: string[];
-  icon: string;
+  image: string | null;
   quantity: number;
 };
+
+// =====================================================
+// SAUCE
+// =====================================================
+
+const sauceOptions = [
+  {
+    id: "mentai",
+    name: "Saus Mentai",
+  },
+  {
+    id: "tar-tar",
+    name: "Saus Tar-Tar",
+  },
+  {
+    id: "brullee",
+    name: "Saus Brullee",
+  },
+  {
+    id: "hot-volcano",
+    name: "Saus Hot Volcano",
+  },
+  {
+    id: "original",
+    name: "Original",
+  },
+];
+
+// =====================================================
+// PCS
+// =====================================================
+
+const pcsOptions = [4, 6, 16];
 
 // =====================================================
 // FORMAT RUPIAH
@@ -119,109 +101,150 @@ const formatRupiah = (value: number) => {
 };
 
 // =====================================================
-// PRODUCT DETAIL PAGE
+// PAGE
 // =====================================================
 
 export default function ProductDetailPage() {
-  const params = useParams();
-  const router = useRouter();
 
   // ===================================================
-  // PARAMETER URL
+  // PARAMS
   // ===================================================
+
+  const params = useParams();
+  const router = useRouter();
 
   const productId = params.produk as string;
 
   // ===================================================
-  // CARI PRODUK
+  // STATE PRODUCT
   // ===================================================
 
-  const product = products.find(
-    (item) => item.id === productId
-  );
+  const [product, setProduct] = useState<Product | null>(null);
+
+  const [loading, setLoading] = useState(true);
 
   // ===================================================
-  // STATE
+  // STATE ORDER
   // ===================================================
 
-  // Multiple sauce
-  const [selectedSauces, setSelectedSauces] = useState<
-    string[]
-  >(["mentai"]);
+  const [selectedSauces, setSelectedSauces] =
+    useState<string[]>(["mentai"]);
 
-  // Pax = Quantity
   const [pax, setPax] = useState(1);
 
-  // Jumlah PCS per Pax
   const [pcs, setPcs] = useState(4);
 
   // ===================================================
-  // PRODUK TIDAK DITEMUKAN
+  // GET PRODUCT
   // ===================================================
 
-  if (!product) {
-    return (
-      <main className="min-h-screen bg-[#F5F5F5] flex items-center justify-center px-4">
-        <div className="text-center">
-          <div className="text-6xl mb-4">
-            🥟
-          </div>
+  const getProduct = async () => {
 
-          <h2 className="text-lg font-bold text-[#212121]">
-            Produk tidak ditemukan
-          </h2>
+    try {
 
-          <p className="text-sm text-zinc-500 mt-2">
-            Produk "{productId}" tidak tersedia.
-          </p>
+      const response = await axios.get<ProductResponse>(
+        `${API_URL}/api/products/detail/${productId}`
+      );
 
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="mt-5 px-5 py-2.5 rounded-xl bg-[#E52424] text-white text-sm font-semibold hover:bg-[#D91F1F] transition"
-          >
-            Kembali
-          </button>
-        </div>
-      </main>
-    );
-  }
+      console.log(
+        "PRODUCT DETAIL:",
+        response.data.data
+      );
+
+      if (response.data.success) {
+
+        setProduct(response.data.data);
+
+      } else {
+
+        setProduct(null);
+
+      }
+
+    } catch (error) {
+
+      console.error(
+        "GET PRODUCT DETAIL ERROR:",
+        error
+      );
+
+      setProduct(null);
+
+    } finally {
+
+      setLoading(false);
+
+    }
+  };
+
+  // ===================================================
+  // USE EFFECT
+  // ===================================================
+
+  useEffect(() => {
+
+    if (productId) {
+      getProduct();
+    }
+
+  }, [productId]);
 
   // ===================================================
   // TOTAL
   // ===================================================
 
-  const total = product.price * pax;
+  const total = product
+    ? product.harga * pax
+    : 0;
 
   // ===================================================
-  // TOGGLE SAUS
+  // TOGGLE SAUCE
   // ===================================================
 
   const toggleSauce = (sauceId: string) => {
+
     setSelectedSauces((current) => {
+
       if (current.includes(sauceId)) {
+
         return current.filter(
           (id) => id !== sauceId
         );
+
       }
 
-      return [...current, sauceId];
+      return [
+        ...current,
+        sauceId,
+      ];
+
     });
+
   };
 
   // ===================================================
-  // TAMBAH KE KERANJANG
+  // ADD TO CART
   // ===================================================
 
   const handleAddToCart = () => {
-    // Minimal 1 saus
-    if (selectedSauces.length === 0) {
-      alert("Silakan pilih minimal satu saus.");
+
+    if (!product) {
       return;
     }
 
+    // Minimal 1 saus
+    if (selectedSauces.length === 0) {
+
+      alert(
+        "Silakan pilih minimal satu saus."
+      );
+
+      return;
+
+    }
+
     // =================================================
-    // AMBIL CART LAMA
+    // GET CART
     // =================================================
 
     const existingCart =
@@ -230,102 +253,113 @@ export default function ProductDetailPage() {
     let cart: CartItem[] = [];
 
     if (existingCart) {
+
       try {
-        const parsedCart = JSON.parse(existingCart);
+
+        const parsedCart =
+          JSON.parse(existingCart);
 
         if (Array.isArray(parsedCart)) {
           cart = parsedCart;
         }
+
       } catch {
+
         cart = [];
+
       }
+
     }
 
     // =================================================
-    // AMBIL NAMA SAUS
+    // SAUCE NAMES
     // =================================================
 
     const sauceNames =
-      product.options[0].values
+      sauceOptions
         .filter((option) =>
-          selectedSauces.includes(option.id)
+          selectedSauces.includes(
+            option.id
+          )
         )
-        .map((option) => option.name);
+        .map(
+          (option) => option.name
+        );
 
     // =================================================
-    // SORT SAUS
-    //
-    // Supaya:
-    // Mentai + Tar-Tar
-    //
-    // sama dengan:
-    // Tar-Tar + Mentai
+    // SORT SAUCE
     // =================================================
 
-    const sortedSauces = [...selectedSauces].sort();
+    const sortedSauces =
+      [...selectedSauces].sort();
 
     // =================================================
-    // ID CART
+    // CART ITEM ID
     // =================================================
 
     const cartItemId =
       `${product.id}-${sortedSauces.join("-")}-${pcs}`;
 
     // =================================================
-    // DATA BARU
+    // NEW ITEM
     // =================================================
 
     const newItem: CartItem = {
+
       id: cartItemId,
 
       productId: product.id,
 
-      name: product.name,
+      name: product.namaProduk,
 
-      price: product.price,
+      price: product.harga,
 
       pcs,
 
-      // Pax = Quantity
       pax,
 
-      // Multiple sauce
       sauce: sauceNames,
 
-      icon: product.icon,
+      image: product.produkImg,
 
-      // Quantity = Pax
       quantity: pax,
+
     };
 
     // =================================================
-    // CEK ITEM YANG SAMA
+    // CHECK EXISTING
     // =================================================
 
-    const existingIndex = cart.findIndex(
-      (item) => item.id === cartItemId
-    );
+    const existingIndex =
+      cart.findIndex(
+        (item) =>
+          item.id === cartItemId
+      );
 
     // =================================================
-    // JIKA SUDAH ADA
+    // UPDATE EXISTING
     // =================================================
 
     if (existingIndex !== -1) {
+
       cart[existingIndex].pax += pax;
 
       cart[existingIndex].quantity += pax;
+
     }
 
     // =================================================
-    // JIKA PRODUK BARU
+    // ADD NEW
     // =================================================
 
     else {
+
       cart.push(newItem);
+
     }
 
     // =================================================
-    // SIMPAN
+    // SAVE
     // =================================================
 
     localStorage.setItem(
@@ -334,7 +368,7 @@ export default function ProductDetailPage() {
     );
 
     // =================================================
-    // UPDATE BADGE KERANJANG
+    // UPDATE CART BADGE
     // =================================================
 
     window.dispatchEvent(
@@ -346,18 +380,95 @@ export default function ProductDetailPage() {
     // =================================================
 
     alert(
-      `${product.name} berhasil ditambahkan ke keranjang.\n\n` +
-        `Pax: ${pax}\n` +
-        `PCS: ${pcs}\n` +
-        `Saus: ${sauceNames.join(", ")}\n` +
-        `Total: ${formatRupiah(total)}`
+      `${product.namaProduk} berhasil ditambahkan ke keranjang.\n\n` +
+      `Pax: ${pax}\n` +
+      `PCS: ${pcs}\n` +
+      `Saus: ${sauceNames.join(", ")}\n` +
+      `Total: ${formatRupiah(total)}`
     );
 
-    // Tidak router.push()
   };
 
   // ===================================================
-  // RENDER
+  // LOADING
+  // ===================================================
+
+  if (loading) {
+
+    return (
+      <main className="min-h-screen bg-[#F5F5F5]">
+
+        <KasirHeader
+          title="Produk"
+          showBack
+        />
+
+        <div className="w-full max-w-md sm:max-w-xl lg:max-w-2xl mx-auto">
+
+          {/* IMAGE SKELETON */}
+          <div className="h-56 sm:h-64 bg-zinc-200 animate-pulse" />
+
+          <div className="px-4 sm:px-6 py-5">
+
+            <div className="w-32 h-6 bg-zinc-200 rounded animate-pulse" />
+
+            <div className="w-24 h-5 bg-zinc-200 rounded mt-3 animate-pulse" />
+
+            <div className="w-full h-12 bg-zinc-200 rounded mt-6 animate-pulse" />
+
+            <div className="w-full h-12 bg-zinc-200 rounded mt-2 animate-pulse" />
+
+            <div className="w-full h-12 bg-zinc-200 rounded mt-2 animate-pulse" />
+
+          </div>
+
+        </div>
+
+      </main>
+    );
+
+  }
+
+  // ===================================================
+  // PRODUCT NOT FOUND
+  // ===================================================
+
+  if (!product) {
+
+    return (
+      <main className="min-h-screen bg-[#F5F5F5] flex items-center justify-center px-4">
+
+        <div className="text-center">
+
+          <div className="text-6xl mb-4">
+            🥟
+          </div>
+
+          <h2 className="text-lg font-bold text-[#212121]">
+            Produk tidak ditemukan
+          </h2>
+
+          <p className="text-sm text-zinc-500 mt-2">
+            Produk yang kamu pilih tidak tersedia.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="mt-5 px-5 py-2.5 rounded-xl bg-[#E52424] text-white text-sm font-semibold hover:bg-[#D91F1F] transition"
+          >
+            Kembali
+          </button>
+
+        </div>
+
+      </main>
+    );
+
+  }
+
+  // ===================================================
+  // MAIN
   // ===================================================
 
   return (
@@ -368,7 +479,7 @@ export default function ProductDetailPage() {
       ================================================= */}
 
       <KasirHeader
-        title={product.name}
+        title={product.namaProduk}
         showBack
       />
 
@@ -382,11 +493,23 @@ export default function ProductDetailPage() {
             PRODUCT IMAGE
         ================================================= */}
 
-        <div className="h-56 sm:h-64 bg-white flex items-center justify-center border-b border-zinc-200">
+        <div className="h-56 sm:h-64 bg-white flex items-center justify-center border-b border-zinc-200 overflow-hidden">
 
-          <div className="text-8xl sm:text-9xl">
-            {product.icon}
-          </div>
+          {product.produkImg ? (
+
+            <img
+              src={`${API_URL}/public/produk/${product.produkImg}`}
+              alt={product.namaProduk}
+              className="w-full h-full object-cover"
+            />
+
+          ) : (
+
+            <div className="text-8xl sm:text-9xl">
+              🥟
+            </div>
+
+          )}
 
         </div>
 
@@ -403,16 +526,8 @@ export default function ProductDetailPage() {
               <div>
 
                 <h2 className="text-xl sm:text-2xl font-bold text-[#212121]">
-                  {product.name}
+                  {product.namaProduk}
                 </h2>
-
-                <p className="text-[#E52424] font-bold mt-1">
-                  {formatRupiah(product.price)}
-                </p>
-
-                <p className="text-[10px] text-zinc-400 mt-1">
-                  Harga per Pax
-                </p>
 
               </div>
 
@@ -423,7 +538,8 @@ export default function ProductDetailPage() {
             </div>
 
             <p className="text-xs sm:text-sm leading-5 text-zinc-500 mt-3">
-              {product.description}
+              {product.keterangan ||
+                "Tidak ada keterangan produk."}
             </p>
 
           </div>
@@ -454,13 +570,9 @@ export default function ProductDetailPage() {
 
             </div>
 
-            {/* =================================================
-                CHECKBOX SAUS
-            ================================================= */}
-
             <div className="space-y-2">
 
-              {product.options[0].values.map(
+              {sauceOptions.map(
                 (option) => {
 
                   const isSelected =
@@ -469,6 +581,7 @@ export default function ProductDetailPage() {
                     );
 
                   return (
+
                     <label
                       key={option.id}
                       className={`
@@ -492,28 +605,16 @@ export default function ProductDetailPage() {
                       `}
                     >
 
-                      {/* =================================================
-                          NATIVE CHECKBOX
-                      ================================================= */}
-
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() =>
-                          toggleSauce(option.id)
+                          toggleSauce(
+                            option.id
+                          )
                         }
-                        className="
-                          w-5
-                          h-5
-                          shrink-0
-                          accent-[#E52424]
-                          cursor-pointer
-                        "
+                        className="w-5 h-5 shrink-0 accent-[#E52424] cursor-pointer"
                       />
-
-                      {/* =================================================
-                          SAUCE NAME
-                      ================================================= */}
 
                       <span
                         className={`
@@ -531,26 +632,24 @@ export default function ProductDetailPage() {
                         {option.name}
                       </span>
 
-                      {/* =================================================
-                          CHECKED INDICATOR
-                      ================================================= */}
-
                       {isSelected && (
+
                         <span className="text-[10px] font-semibold text-[#E52424]">
                           Dipilih
                         </span>
+
                       )}
 
                     </label>
+
                   );
+
                 }
               )}
 
             </div>
 
-            {/* =================================================
-                SAUS TERPILIH
-            ================================================= */}
+            {/* SELECTED SAUCE */}
 
             <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-3">
 
@@ -570,14 +669,15 @@ export default function ProductDetailPage() {
 
                 <p className="text-xs font-semibold text-[#212121] leading-5">
 
-                  {product.options[0].values
+                  {sauceOptions
                     .filter((option) =>
                       selectedSauces.includes(
                         option.id
                       )
                     )
                     .map(
-                      (option) => option.name
+                      (option) =>
+                        option.name
                     )
                     .join(" + ")}
 
@@ -611,20 +711,13 @@ export default function ProductDetailPage() {
                 type="button"
                 onClick={() =>
                   setPax(
-                    Math.max(1, pax - 1)
+                    Math.max(
+                      1,
+                      pax - 1
+                    )
                   )
                 }
-                className="
-                  w-10
-                  h-10
-                  rounded-lg
-                  bg-[#F5F5F5]
-                  text-[#212121]
-                  font-bold
-                  hover:bg-zinc-200
-                  active:scale-95
-                  transition
-                "
+                className="w-10 h-10 rounded-lg bg-[#F5F5F5] text-[#212121] font-bold hover:bg-zinc-200 active:scale-95 transition"
               >
                 −
               </button>
@@ -644,19 +737,12 @@ export default function ProductDetailPage() {
               <button
                 type="button"
                 onClick={() =>
-                  setPax(pax + 1)
+                  setPax(
+                    (current) =>
+                      current + 1
+                  )
                 }
-                className="
-                  w-10
-                  h-10
-                  rounded-lg
-                  bg-[#E52424]
-                  text-white
-                  font-bold
-                  hover:bg-[#D91F1F]
-                  active:scale-95
-                  transition
-                "
+                className="w-10 h-10 rounded-lg bg-[#E52424] text-white font-bold hover:bg-[#D91F1F] active:scale-95 transition"
               >
                 +
               </button>
@@ -677,7 +763,7 @@ export default function ProductDetailPage() {
 
             <div className="grid grid-cols-3 gap-2">
 
-              {product.pcs.map(
+              {pcsOptions.map(
                 (value) => (
 
                   <button
@@ -742,21 +828,7 @@ export default function ProductDetailPage() {
           <button
             type="button"
             onClick={handleAddToCart}
-            className="
-              shrink-0
-              h-11
-              px-4
-              sm:px-6
-              rounded-xl
-              bg-[#E52424]
-              text-white
-              text-xs
-              sm:text-sm
-              font-semibold
-              hover:bg-[#D91F1F]
-              active:scale-[0.98]
-              transition
-            "
+            className="shrink-0 h-11 px-4 sm:px-6 rounded-xl bg-[#E52424] text-white text-xs sm:text-sm font-semibold hover:bg-[#D91F1F] active:scale-[0.98] transition"
           >
             Tambah ke Keranjang
           </button>
