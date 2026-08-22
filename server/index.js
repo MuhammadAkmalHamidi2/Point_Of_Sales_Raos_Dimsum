@@ -1,13 +1,22 @@
-const express = require('express')
-const PORT = 2000
-const db = require('./models')
+require('dotenv').config();
 
-const server = (express())
+const express = require('express');
+const cors = require('cors');
+const PORT = process.env.PORT || 2000;
+const db = require('./models');
 
-server.use(express.json())
+const server = express();
+server.use(cors());
+server.use(express.json());
+server.use(express.urlencoded({ extended: true }));
 
+server.use('/api/auth', require('./routers/auth-router'));
+
+server.get('/', (req, res) => {
+    res.json({ message: 'POS Raos Dimsum API is running' })
+})
 
 server.listen(PORT, () => {
-    db.sequelize.sync({ alter : true })
+    // db.sequelize.sync({ alter: true })
     console.log(`server is running at port : ${PORT}`);
 })
