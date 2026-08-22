@@ -14,17 +14,34 @@ export default function LoginPage() {
   // LOGIN
   // =====================================================
 
-  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const [errorMessage, setErrorMessage] = useState("");
 
-    // Dummy login
-    alert(
-      `Data Login\n\nUsername: ${username}\nPassword: ${password}`
-    );
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+  event.preventDefault();
+  setErrorMessage("");
 
-    // Setelah alert ditutup → masuk ke halaman absen terlebih dahulu
+  try {
+    const response = await fetch("http://localhost:2000/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ username, password }),
+    });
+
+    const data = await response.json();
+
+    if (!data.status) {
+      setErrorMessage(data.message);
+      return;
+    }
+
+    localStorage.setItem("token", data.token);
     router.push("/absen");
-  };
+  } catch (error) {
+    setErrorMessage("Tidak bisa terhubung ke server");
+  }
+};
 
   return (
     <main className="min-h-screen bg-[#F5F5F5] flex items-center justify-center p-4 sm:p-6">
@@ -289,6 +306,11 @@ export default function LoginPage() {
                     Ingat saya di perangkat ini
                   </label>
                 </div>
+
+                {/* ERROR MESSAGE */}
+                {errorMessage && (
+                  <p className="text-sm text-red-500">{errorMessage}</p>
+                )}
 
                 {/* LOGIN BUTTON */}
                 <button
