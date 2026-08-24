@@ -24,9 +24,11 @@ server.use('/api/auth', require('./routers/auth-router'));
 
 const categoryRoutes = require('./routers/category-router');
 const produkRoutes = require("./routers/produk-router");
+const penjualanRoutes = require("./routers/penjualan-router");
 
 server.use('/api/categories', categoryRoutes);
 server.use("/api/products", produkRoutes);
+server.use("/api/penjualan", penjualanRoutes);
 
 
 server.get('/', (req, res) => {

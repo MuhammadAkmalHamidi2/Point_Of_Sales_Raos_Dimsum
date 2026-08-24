@@ -3,23 +3,22 @@ const express = require("express");
 const {
   getProdukByCategory,
   getProdukById,
+  getAllSauce,
+  getAllQty,
+  getHargaByPax,
 } = require("../controllers/produk-controller");
 
 const router = express.Router();
 
-// ==========================================
-// GET DETAIL PRODUK
-// GET /api/products/detail/1
-// ==========================================
-
+// Detail Produk
 router.get("/detail/:id", getProdukById);
 
+// Endpoint Saus & Harga Dynamic
+router.get("/:productId/sauces", getAllSauce);
+router.get("/:productId/qty", getAllQty);
+router.get("/:productId/harga", getHargaByPax);
 
-// ==========================================
-// GET PRODUK BERDASARKAN KATEGORI
-// GET /api/products/1
-// ==========================================
-
+// Produk berdasarkan Kategori
 router.get("/:categoryId", getProdukByCategory);
 
 module.exports = router;

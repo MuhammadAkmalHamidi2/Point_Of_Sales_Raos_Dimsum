@@ -1,15 +1,25 @@
 'use strict';
-
-const {
-  Model
-} = require('sequelize');
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class produk extends Model {
     static associate(models) {
+      // Relasi Kategori
       produk.belongsTo(models.category, {
         foreignKey: 'categoryId',
         as: 'category',
+      });
+
+      // Relasi Saus / Topping
+      produk.hasMany(models.topping, {
+        foreignKey: 'produkId',
+        as: 'toppings',
+      });
+
+      // Relasi Qty & Harga
+      produk.hasMany(models.hargaProduk, {
+        foreignKey: 'produkId',
+        as: 'hargaproduks',
       });
     }
   }
@@ -20,7 +30,6 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
       },
-
       keterangan: {
         type: DataTypes.STRING,
         allowNull: true,
@@ -30,9 +39,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       produkImg: {
-        type : DataTypes.STRING,
+        type: DataTypes.STRING,
         allowNull: false,
-      }
+      },
     },
     {
       sequelize,
