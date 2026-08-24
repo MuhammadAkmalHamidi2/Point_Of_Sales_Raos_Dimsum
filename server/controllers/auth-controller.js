@@ -15,7 +15,7 @@ module.exports = {
       if (!user) {
         return res.status(404).json({
           status: false,
-          message: "Username tidak ditemukan",
+          message: "Username atau Password salah",
         });
       }
 
@@ -23,11 +23,11 @@ module.exports = {
       if (!isPasswordValid) {
         return res.status(401).json({
           status: false,
-          message: "Password salah",
+          message: "Username atau Password salah",
         });
       }
 
-      const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
+      const token = jwt.sign({ id: user.id, role: user.Role.role }, process.env.JWT_SECRET, {
         expiresIn: "1d",
       });
 
@@ -35,6 +35,7 @@ module.exports = {
         status: true,
         message: "Login berhasil",
         token,
+        role : user.Role.role
       });
     } catch (error) {
       console.log(error);
@@ -72,4 +73,11 @@ module.exports = {
       });
     }
   },
+
+  adminOnlyTest: async (req, res) => {
+    res.status(200).json({
+      status: true,
+      message: "Akses admin berhasil",
+    });
+  }
 };

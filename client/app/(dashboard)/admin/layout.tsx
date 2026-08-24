@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 const Icons = {
   Dashboard: ({ active }: { active: boolean }) => (
@@ -24,18 +25,42 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   ),
+    Tenant: ({ active }: { active: boolean }) => (
+    <svg className={`w-5 h-5 ${active ? "text-[#E52424]" : "text-zinc-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 9l1.5-4.5A2 2 0 016.4 3h11.2a2 2 0 011.9 1.5L21 9m-18 0v9a2 2 0 002 2h14a2 2 0 002-2V9m-18 0h18M9 21v-6a1 1 0 011-1h4a1 1 0 011 1v6" />
+    </svg>
+  ),
 };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [isChecking, setIsChecking] = useState(true);
+
+  useEffect(() => {
+    const role = localStorage.getItem("role");
+    const token = localStorage.getItem("token");
+
+    if (!token || role !== "admin") {
+      router.push("/login");
+    } else {
+      setIsChecking(false);
+    }
+  }, []);
+
+  if (isChecking) {
+    return null;
+  }
 
   const navItems = [
     { label: "Dashboard", path: "/admin", Icon: Icons.Dashboard },
     { label: "Karyawan", path: "/admin/karyawan", Icon: Icons.Karyawan },
+    { label: "Tenant", path: "/admin/tenant", Icon: Icons.Tenant },
     { label: "Penjualan", path: "/admin/analisa", Icon: Icons.Penjualan },
     { label: "Riwayat", path: "/admin/transaksi", Icon: Icons.Riwayat },
   ];
 
+  
   return (
     <div className="w-full min-h-screen bg-[#F5F6F8] text-[#212121] font-sans antialiased flex flex-col md:flex-row">
       

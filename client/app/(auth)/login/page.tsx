@@ -37,7 +37,12 @@ export default function LoginPage() {
     }
 
     localStorage.setItem("token", data.token);
-    router.push("/absen");
+    localStorage.setItem("role", data.role);
+    if (data.role === "admin") {
+      router.push("/admin");
+    } else if (data.role === "kasir") {
+      router.push("/absen");
+    }
   } catch (error) {
     setErrorMessage("Tidak bisa terhubung ke server");
   }
