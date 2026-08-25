@@ -1,34 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { api } from "@/lib/api";
 
 type FilterType = "Hari Ini" | "Mingguan" | "Bulanan" | "Custom";
 
-const tenantMasterData = {
-  1: {
-    name: "Raos Dimsum - Outlet BSD",
-    contact: "081234567890",
-    status: "Aktif",
-    karyawan: [
-      { id: 1, name: "Bud Santoso", role: "Kasir", status: "Aktif" },
-      { id: 2, name: "Siti Aminah", role: "Kasir", status: "Aktif" },
-    ],
-  },
-  2: {
-    name: "Raos Dimsum - Outlet Gading",
-    contact: "081298765432",
-    status: "Aktif",
-    karyawan: [
-      { id: 3, name: "Ahmad Fauzi", role: "Kasir", status: "Izin" },
-    ],
-  },
-  3: {
-    name: "Raos Dimsum - Outlet Kelapa Gading",
-    contact: "081211112222",
-    status: "Nonaktif",
-    karyawan: [],
-  },
+type Tenant = {
+  outletName: string;
+  address: string | null;
+  status: boolean;
+  karyawans: { id: number; name: string; category: string; phone: string | null }[];
 };
 
 const dashboardDataMap = {
@@ -117,12 +99,37 @@ export default function TenantDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = Number(params.id);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("Hari Ini");
   const [customStart, setCustomStart] = useState("2026-05-20");
   const [customEnd, setCustomEnd] = useState("2026-05-24");
 
-  const tenant = tenantMasterData[id as keyof typeof tenantMasterData];
+  useEffect(() => {
+    const fetchTenant = async () => {
+      try {
+        const response = await api.get<{ data?: Tenant }>(`/api/outlets/${id}`);
+        setTenant(response.data.data ?? null);
+      } catch (error) {
+        console.error("Gagal mengambil detail tenant:", error);
+        setTenant(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    const loadTenant = async () => {
+      if (Number.isInteger(id)) await fetchTenant();
+    };
+
+    void loadTenant();
+  }, [id]);
+
   const currentData = dashboardDataMap[filter];
+
+  if (isLoading) {
+    return <p className="text-sm text-zinc-500">Memuat detail tenant...</p>;
+  }
 
   if (!tenant) {
     return <p className="text-sm text-zinc-500">Tenant tidak ditemukan.</p>;
@@ -141,15 +148,15 @@ export default function TenantDetailPage() {
               ←
             </button>
             <div>
-              <h1 className="text-base md:text-xl font-bold text-[#212121]">{tenant.name}</h1>
+              <h1 className="text-base md:text-xl font-bold text-[#212121]">{tenant.outletName}</h1>
               <p className="text-xs text-zinc-400 mt-0.5">
-                {tenant.contact} ·{" "}
+                {tenant.address ?? "Alamat belum diisi"} ·{" "}
                 <span
                   className={`font-semibold ${
-                    tenant.status === "Aktif" ? "text-green-600" : "text-zinc-500"
+                    tenant.status ? "text-green-600" : "text-zinc-500"
                   }`}
                 >
-                  {tenant.status}
+                  {tenant.status ? "Aktif" : "Nonaktif"}
                 </span>
               </p>
             </div>
@@ -356,28 +363,29 @@ export default function TenantDetailPage() {
               <p className="text-[11px] text-zinc-400 mt-0.5">Karyawan yang bertugas di tenant ini</p>
             </div>
             <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-500">
-              {tenant.karyawan.length} orang
+              {tenant.karyawans.length} orang
             </span>
           </div>
 
-          {tenant.karyawan.length === 0 ? (
+          {tenant.karyawans.length === 0 ? (
             <p className="text-xs text-zinc-400 py-4 text-center">Belum ada karyawan terdaftar di tenant ini.</p>
           ) : (
             <div className="divide-y divide-zinc-100">
-              {tenant.karyawan.map((emp) => (
+              {tenant.karyawans.map((emp) => (
                 <div key={emp.id} className="py-3 flex justify-between items-center">
                   <div>
                     <p className="text-xs font-bold text-[#212121]">{emp.name}</p>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">{emp.role}</p>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      {emp.category}
+                      {emp.phone && <span> · {emp.phone}</span>}
+                    </p>
                   </div>
                   <span
                     className={`text-[11px] font-bold px-2.5 py-1 rounded-lg ${
-                      emp.status === "Aktif"
-                        ? "bg-green-50 text-green-600"
-                        : "bg-amber-50 text-amber-600"
+                      "bg-green-50 text-green-600"
                     }`}
                   >
-                    {emp.status}
+                    Aktif
                   </span>
                 </div>
               ))}

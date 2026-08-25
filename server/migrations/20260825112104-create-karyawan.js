@@ -2,23 +2,34 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('Outlets', {
+    await queryInterface.createTable('Karyawans', {
       id: {
         allowNull: false,
         autoIncrement: true,
         primaryKey: true,
         type: Sequelize.INTEGER
       },
-      outletName: {
+      name: {
         type: Sequelize.STRING
       },
-      address: {
-        type: Sequelize.TEXT
+      category: {
+        type: Sequelize.ENUM('Produksi', 'Tenant'),
+        allowNull: false
       },
-      status: {
-        type: Sequelize.BOOLEAN
+      phone: {
+        type: Sequelize.STRING
       },
-      ownerId: {
+      outletId: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'Outlets',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+      },
+      userId: {
         type: Sequelize.INTEGER,
         allowNull: true,
         references: {
@@ -39,6 +50,6 @@ module.exports = {
     });
   },
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('Outlets');
+    await queryInterface.dropTable('Karyawans');
   }
 };
