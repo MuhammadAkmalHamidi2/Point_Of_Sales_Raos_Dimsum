@@ -124,44 +124,57 @@ export default function CartPage() {
   // CHECKOUT HANDLER
   // ===================================================
 
+  // ===================================================
+  // CHECKOUT HANDLER
+  // ===================================================
+
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0) {
+      alert("Keranjang masih kosong");
+      return;
+    }
+
+    // Ambil token kasir dari localStorage
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      alert("Sesi kasir tidak ditemukan. Silakan login kembali.");
+      router.push("/login");
+      return;
+    }
+
+    setIsSubmitting(true);
 
     try {
-      setIsSubmitting(true);
-
       const payload = {
         totalBayar: total,
         metodePembayaran: paymentMethod,
         items: cart,
       };
 
-      const response = await axios.post(
-        `${API_URL}/api/penjualan/checkout`,
-        payload
-      );
+      const response = await axios.post(`${API_URL}/api/penjualan/checkout`, payload, {
+        headers: {
+          Authorization: `Bearer ${token}`, // Mempassing token ke backend
+        },
+      });
 
-      if (response.data?.success) {
+      if (response.data.success) {
+        // 1. Set data transaksi berhasil untuk menampilkan modal sukses
         setSuccessData({
-          invoice: response.data.data?.invoice || "-",
-          totalBayar: response.data.data?.totalBayar || total,
-          metodePembayaran: paymentMethod,
+          invoice: response.data.data.invoice,
+          totalBayar: response.data.data.totalBayar,
+          metodePembayaran: response.data.data.metodePembayaran,
         });
 
+        // 2. Bersihkan keranjang belanja di state & localStorage
+        setCart([]);
         localStorage.removeItem("kasir-cart");
         window.dispatchEvent(new Event("cart-updated"));
-        setCart([]);
       }
-    } catch (error: unknown) {
-      console.error("CHECKOUT ERROR:", error);
-      let errorMessage =
-        "Gagal memproses transaksi. Pastikan koneksi server backend aktif.";
-
-      if (axios.isAxiosError(error) && error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      }
-
-      alert(errorMessage);
+    } catch (error: any) {
+      console.error("Checkout gagal:", error);
+      const message = error.response?.data?.message || "Gagal memproses transaksi. Coba lagi.";
+      alert(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -404,11 +417,10 @@ export default function CartPage() {
             <button
               type="button"
               onClick={() => setPaymentMethod("Cash")}
-              className={`relative p-4 rounded-2xl border text-left transition-all duration-200 active:scale-[0.98] ${
-                paymentMethod === "Cash"
-                  ? "border-[#E52424] bg-red-50/40 ring-2 ring-[#E52424]/20 shadow-sm"
-                  : "border-zinc-200 bg-white hover:border-zinc-300"
-              }`}
+              className={`relative p-4 rounded-2xl border text-left transition-all duration-200 active:scale-[0.98] ${paymentMethod === "Cash"
+                ? "border-[#E52424] bg-red-50/40 ring-2 ring-[#E52424]/20 shadow-sm"
+                : "border-zinc-200 bg-white hover:border-zinc-300"
+                }`}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="w-10 h-10 rounded-xl bg-amber-100/80 text-amber-700 flex items-center justify-center text-xl">
@@ -421,11 +433,10 @@ export default function CartPage() {
                 )}
               </div>
               <p
-                className={`text-sm font-bold ${
-                  paymentMethod === "Cash"
-                    ? "text-[#E52424]"
-                    : "text-zinc-800"
-                }`}
+                className={`text-sm font-bold ${paymentMethod === "Cash"
+                  ? "text-[#E52424]"
+                  : "text-zinc-800"
+                  }`}
               >
                 Cash / Tunai
               </p>
@@ -438,11 +449,10 @@ export default function CartPage() {
             <button
               type="button"
               onClick={() => setPaymentMethod("QRIS")}
-              className={`relative p-4 rounded-2xl border text-left transition-all duration-200 active:scale-[0.98] ${
-                paymentMethod === "QRIS"
-                  ? "border-[#E52424] bg-red-50/40 ring-2 ring-[#E52424]/20 shadow-sm"
-                  : "border-zinc-200 bg-white hover:border-zinc-300"
-              }`}
+              className={`relative p-4 rounded-2xl border text-left transition-all duration-200 active:scale-[0.98] ${paymentMethod === "QRIS"
+                ? "border-[#E52424] bg-red-50/40 ring-2 ring-[#E52424]/20 shadow-sm"
+                : "border-zinc-200 bg-white hover:border-zinc-300"
+                }`}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="w-10 h-10 rounded-xl bg-blue-100/80 text-blue-700 flex items-center justify-center text-xl">
@@ -455,11 +465,10 @@ export default function CartPage() {
                 )}
               </div>
               <p
-                className={`text-sm font-bold ${
-                  paymentMethod === "QRIS"
-                    ? "text-[#E52424]"
-                    : "text-zinc-800"
-                }`}
+                className={`text-sm font-bold ${paymentMethod === "QRIS"
+                  ? "text-[#E52424]"
+                  : "text-zinc-800"
+                  }`}
               >
                 QRIS
               </p>

@@ -41,7 +41,7 @@ export default function LoginPage() {
     if (data.role === "admin") {
       router.push("/admin");
     } else if (data.role === "kasir") {
-      router.push("/absen");
+      router.push("/kasir");
     }
   } catch (error) {
     setErrorMessage("Tidak bisa terhubung ke server");

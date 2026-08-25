@@ -4,13 +4,27 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class penjualan extends Model {
     static associate(models) {
-      // Relasi idProduk ke tabel produk
-      penjualan.belongsTo(models.produk, {
-        foreignKey: 'idProduk',
-        as: 'produk'
-      });
+      // Relasi idProduk ke tabel produks
+      const ProdukModel = models.produk || models.Produk;
+      if (ProdukModel) {
+        penjualan.belongsTo(ProdukModel, {
+          foreignKey: 'idProduk',
+          as: 'produk'
+        });
+      }
+
+      // Relasi userId ke tabel users (kasir)
+      // Mengecek models.User maupun models.user agar tidak throw error
+      const UserModel = models.User || models.user;
+      if (UserModel) {
+        penjualan.belongsTo(UserModel, {
+          foreignKey: 'userId',
+          as: 'kasir' // Menggunakan alias 'kasir' (jangan 'id' karena bentrok dengan Primary Key)
+        });
+      }
     }
   }
+
   penjualan.init({
     invoice: {
       type: DataTypes.STRING,
@@ -20,7 +34,15 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: false,
       references: {
-        model: 'produks', // Nama tabel produk di database
+        model: 'produks', // Nama tabel produk di MySQL
+        key: 'id'
+      }
+    },
+    userId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'users', // Nama tabel user di MySQL
         key: 'id'
       }
     },
@@ -31,19 +53,21 @@ module.exports = (sequelize, DataTypes) => {
     },
     pax: DataTypes.INTEGER,
     saus: {
-      type: DataTypes.JSON, // Menyimpan Array of String ["saus mentai", "saus tar-tar"]
+      type: DataTypes.JSON, // Array of String ["Saus Mentai"]
       allowNull: true,
       defaultValue: []
     },
     subtotal: DataTypes.INTEGER,
     totalBayar: DataTypes.INTEGER,
     metodePembayaran: {
-      type: DataTypes.STRING, // String ("Cash" / "QRIS")
+      type: DataTypes.STRING, // "Cash" / "QRIS"
       allowNull: false
     }
   }, {
     sequelize,
     modelName: 'penjualan',
+    tableName: 'penjualans' // Menyesuaikan nama tabel plural di MySQL Workbench
   });
+
   return penjualan;
 };

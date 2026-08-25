@@ -1,4 +1,11 @@
-const { penjualan, sequelize } = require("../models");
+const jwt = require("jsonwebtoken");
+const db = require("../models");
+
+// Ambil model secara fleksibel untuk mencegah error undefined akibat perbedaan kapitalisasi
+const Penjualan = db.penjualan || db.Penjualan;
+const UserModel = db.User || db.user || db.users;
+const ProdukModel = db.produk || db.Produk || db.produks;
+const sequelize = db.sequelize;
 
 const checkoutTransaksi = async (req, res) => {
   const transaction = await sequelize.transaction();
@@ -7,9 +14,43 @@ const checkoutTransaksi = async (req, res) => {
     const { totalBayar, metodePembayaran, items } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
+      await transaction.rollback();
       return res.status(400).json({
         success: false,
         message: "Data keranjang kosong",
+      });
+    }
+
+    // ----------------------------------------------------
+    // AMBIL USER ID DARI TOKEN (req.user ATAU Header Authorization)
+    // ----------------------------------------------------
+    let userId = req.user?.id;
+
+    if (!userId) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const token = authHeader.split(" ")[1];
+        try {
+          const decoded = jwt.verify(
+            token,
+            process.env.JWT_SECRET || "secret_key_pos_raos"
+          );
+          userId = decoded.id || decoded.userId;
+        } catch (err) {
+          await transaction.rollback();
+          return res.status(401).json({
+            success: false,
+            message: "Token tidak valid atau telah kadaluwarsa",
+          });
+        }
+      }
+    }
+
+    if (!userId) {
+      await transaction.rollback();
+      return res.status(401).json({
+        success: false,
+        message: "Sesi kasir tidak ditemukan. Silakan login kembali.",
       });
     }
 
@@ -18,21 +59,30 @@ const checkoutTransaksi = async (req, res) => {
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     const invoice = `INV-${dateStr}-${randomNum}`;
 
-    // 2. Mapping data keranjang langsung ke struktur 1 tabel
-    const dataPenjualan = items.map((item) => ({
-      invoice,
-      idProduk: Number(item.productId),
-      namaProduk: item.name,
-      pcs: Number(item.pcs),
-      pax: Number(item.pax),
-      saus: Array.isArray(item.sauce) ? item.sauce : (item.sauce ? [item.sauce] : []),
-      subtotal: Number(item.price * item.pax),
-      totalBayar: Number(totalBayar),
-      metodePembayaran,
-    }));
+    // 2. Mapping data keranjang dengan fallback field (mendukung nama field FE & BE)
+    const dataPenjualan = items.map((item) => {
+      const sausArray = Array.isArray(item.saus || item.sauce)
+        ? item.saus || item.sauce
+        : (item.saus || item.sauce)
+        ? [item.saus || item.sauce]
+        : [];
+
+      return {
+        invoice,
+        idProduk: Number(item.idProduk || item.productId || item.id || 0),
+        userId: Number(userId),
+        namaProduk: item.namaProduk || item.name || "Produk",
+        pcs: Number(item.pcs || 1),
+        pax: Number(item.pax || 1),
+        saus: sausArray,
+        subtotal: Number(item.subtotal || item.price * (item.pax || 1) || 0),
+        totalBayar: Number(totalBayar),
+        metodePembayaran,
+      };
+    });
 
     // 3. Simpan semua baris barang sekaligus
-    const result = await penjualan.bulkCreate(dataPenjualan, { transaction });
+    const result = await Penjualan.bulkCreate(dataPenjualan, { transaction });
 
     await transaction.commit();
 
@@ -41,13 +91,14 @@ const checkoutTransaksi = async (req, res) => {
       message: "Transaksi berhasil disimpan",
       data: {
         invoice,
+        kasirId: userId,
         totalBayar,
         metodePembayaran,
         totalItems: result.length,
       },
     });
   } catch (error) {
-    await transaction.rollback();
+    if (transaction) await transaction.rollback();
     console.error("CHECKOUT ERROR:", error);
 
     return res.status(500).json({
@@ -58,4 +109,60 @@ const checkoutTransaksi = async (req, res) => {
   }
 };
 
-module.exports = { checkoutTransaksi };
+const tampilPenjualanByUserId = async (req, res) => {
+  try {
+    // Ambil userId dari URL params atau dari middleware auth (JWT)
+    const userId = req.params.userId || req.user?.id;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID wajib diisi.",
+      });
+    }
+
+    // Susun array include secara dinamis untuk mencegah error 'Include unexpected'
+    const includeOptions = [];
+
+    if (UserModel) {
+      includeOptions.push({
+        model: UserModel,
+        as: "kasir",
+        attributes: ["id", "username"],
+      });
+    }
+
+    if (ProdukModel) {
+      includeOptions.push({
+        model: ProdukModel,
+        as: "produk",
+        required: false,
+      });
+    }
+
+    const dataPenjualan = await Penjualan.findAll({
+      where: { userId },
+      include: includeOptions,
+      order: [["createdAt", "DESC"]],
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Berhasil mengambil data penjualan berdasarkan User ID",
+      totalItem: dataPenjualan.length,
+      data: dataPenjualan,
+    });
+  } catch (error) {
+    console.error("Error pada tampilPenjualanByUserId:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan server saat mengambil data penjualan.",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = {
+  checkoutTransaksi,
+  tampilPenjualanByUserId,
+};

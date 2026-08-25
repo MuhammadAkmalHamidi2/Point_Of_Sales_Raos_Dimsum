@@ -8,7 +8,7 @@ import Link from "next/link";
 // role: "admin"  -> akun milik Owner A/B, lihat tenant miliknya sendiri saja
 const currentUser = {
   id: 10, // ganti angka ini untuk simulasi admin/owner yang beda (misal jadi 20)
-  role: "master" as "master" | "admin", // ganti ke "master" untuk simulasi akun pemilik brand
+  role: "admin" as "master" | "admin", // ganti ke "master" untuk simulasi akun pemilik brand
 };
 
 type Tenant = {

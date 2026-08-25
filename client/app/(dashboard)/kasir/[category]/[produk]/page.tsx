@@ -8,10 +8,6 @@ import KasirHeader from "@/components/kasir/KasirHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-// =====================================================
-// TYPES
-// =====================================================
-
 type Topping = {
   id: number;
   namaTopping: string;
@@ -52,10 +48,6 @@ type CartItem = {
   quantity: number;
 };
 
-// =====================================================
-// FORMAT RUPIAH
-// =====================================================
-
 const formatRupiah = (value: number) => {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -64,28 +56,21 @@ const formatRupiah = (value: number) => {
   }).format(value);
 };
 
-// =====================================================
-// PAGE
-// =====================================================
-
 export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
 
   const productId = params.produk as string;
 
-  // State Data DB
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // State Order User
   const [selectedSauces, setSelectedSauces] = useState<number[]>([]);
   const [selectedPcsOption, setSelectedPcsOption] = useState<HargaProduk | null>(null);
   const [pax, setPax] = useState(1);
 
-  // ===================================================
-  // GET PRODUCT DETAIL
-  // ===================================================
+  // State Pop-up Notifikasi
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const getProductDetail = async () => {
     try {
@@ -99,12 +84,6 @@ export default function ProductDetailPage() {
         const data = response.data.data;
         setProduct(data);
 
-        // Set default saus pertama
-        if (data.toppings && data.toppings.length > 0) {
-          setSelectedSauces([data.toppings[0].id]);
-        }
-
-        // Set default Qty terkecil
         if (data.hargaproduks && data.hargaproduks.length > 0) {
           const sortedHarga = [...data.hargaproduks].sort((a, b) => a.qty - b.qty);
           setSelectedPcsOption(sortedHarga[0]);
@@ -126,18 +105,12 @@ export default function ProductDetailPage() {
     }
   }, [productId]);
 
-  // ===================================================
-  // PERHITUNGAN HARGA & SAUS
-  // ===================================================
-
-  // 1. Harga Dasar Dimsum (berdasarkan Qty/PCS yang dipilih)
   const basePrice = selectedPcsOption
     ? Number(selectedPcsOption.harga)
     : product
     ? Number(product.harga)
     : 0;
 
-  // 2. Ambil objek saus yang dicentang
   const selectedSauceObjects = (product?.toppings || []).filter((s) =>
     selectedSauces.includes(s.id)
   );
@@ -145,7 +118,6 @@ export default function ProductDetailPage() {
   const totalPcs = selectedPcsOption ? selectedPcsOption.qty : 0;
   const numSauces = selectedSauceObjects.length;
 
-  // 3. Hitung Biaya Saus Per Pax: (PCS / Jumlah Saus) * Harga Tiap Saus
   const totalSaucePricePerPax =
     numSauces > 0 && totalPcs > 0
       ? selectedSauceObjects.reduce((acc, sauce) => {
@@ -154,15 +126,8 @@ export default function ProductDetailPage() {
         }, 0)
       : 0;
 
-  // 4. Unit Price Per Pax (Harga Dimsum + Total Biaya Saus)
   const unitPricePerPax = basePrice + totalSaucePricePerPax;
-
-  // 5. Total Akhir (Unit Price * Pax)
   const total = unitPricePerPax * pax;
-
-  // ===================================================
-  // TOGGLE SAUCE
-  // ===================================================
 
   const toggleSauce = (sauceId: number) => {
     setSelectedSauces((current) => {
@@ -173,17 +138,8 @@ export default function ProductDetailPage() {
     });
   };
 
-  // ===================================================
-  // ADD TO CART
-  // ===================================================
-
   const handleAddToCart = () => {
     if (!product || !selectedPcsOption) return;
-
-    if (selectedSauces.length === 0) {
-      alert("Silakan pilih minimal satu saus.");
-      return;
-    }
 
     const existingCart = localStorage.getItem("kasir-cart");
     let cart: CartItem[] = [];
@@ -197,9 +153,14 @@ export default function ProductDetailPage() {
       }
     }
 
-    const sauceNames = selectedSauceObjects.map((option) => option.namaTopping);
+    const sauceNames =
+      selectedSauceObjects.length > 0
+        ? selectedSauceObjects.map((option) => option.namaTopping)
+        : ["original"];
+
     const sortedSauceIds = [...selectedSauces].sort((a, b) => a - b);
-    const cartItemId = `${product.id}-${sortedSauceIds.join("-")}-${selectedPcsOption.qty}`;
+    const sauceKey = sortedSauceIds.length > 0 ? sortedSauceIds.join("-") : "original";
+    const cartItemId = `${product.id}-${sauceKey}-${selectedPcsOption.qty}`;
 
     const newItem: CartItem = {
       id: cartItemId,
@@ -226,19 +187,9 @@ export default function ProductDetailPage() {
     localStorage.setItem("kasir-cart", JSON.stringify(cart));
     window.dispatchEvent(new Event("cart-updated"));
 
-    alert(
-      `${product.namaProduk} berhasil ditambahkan ke keranjang.\n\n` +
-        `Pax: ${pax}\n` +
-        `PCS: ${selectedPcsOption.qty}\n` +
-        `Saus: ${sauceNames.join(", ")}\n` +
-        `Biaya Saus: ${formatRupiah(totalSaucePricePerPax * pax)}\n` +
-        `Total: ${formatRupiah(total)}`
-    );
+    // Tampilkan Pop-up
+    setShowSuccessModal(true);
   };
-
-  // ===================================================
-  // RENDER STATES
-  // ===================================================
 
   if (loading) {
     return (
@@ -277,7 +228,6 @@ export default function ProductDetailPage() {
       <KasirHeader title={product.namaProduk} showBack />
 
       <div className="w-full max-w-md sm:max-w-xl lg:max-w-2xl mx-auto">
-        {/* GAMBAR PRODUK */}
         <div className="h-56 sm:h-64 bg-white flex items-center justify-center border-b border-zinc-200 overflow-hidden">
           {product.produkImg ? (
             <img
@@ -291,7 +241,6 @@ export default function ProductDetailPage() {
         </div>
 
         <div className="px-4 sm:px-6 py-5">
-          {/* INFORMASI PRODUK */}
           <div className="mb-7">
             <div className="flex items-start justify-between gap-3">
               <h2 className="text-xl sm:text-2xl font-bold text-[#212121]">
@@ -306,14 +255,13 @@ export default function ProductDetailPage() {
             </p>
           </div>
 
-          {/* PILIH SAUS */}
           <section className="mb-7">
             <div className="flex items-end justify-between mb-3">
               <div>
                 <h3 className="text-sm font-semibold text-[#212121]">Pilih Saus</h3>
-                <p className="text-[10px] text-zinc-400 mt-1">Pilih satu atau lebih saus</p>
+                <p className="text-[10px] text-zinc-400 mt-1">Pilih satu atau lebih saus (opsional)</p>
               </div>
-              <span className="text-[10px] font-semibold text-[#E52424]">Wajib</span>
+              <span className="text-[10px] font-medium text-zinc-400">Opsional</span>
             </div>
 
             <div className="space-y-2">
@@ -351,7 +299,6 @@ export default function ProductDetailPage() {
               })}
             </div>
 
-            {/* RINGKASAN SAUS DIPILIH & ESTIMASI BIAYA SAUS */}
             <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-3">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wide">
@@ -366,12 +313,11 @@ export default function ProductDetailPage() {
                   {selectedSauceObjects.map((s) => s.namaTopping).join(" + ")}
                 </p>
               ) : (
-                <p className="text-xs text-zinc-400">Belum ada saus dipilih</p>
+                <p className="text-xs font-medium text-zinc-500">Original (Tanpa Saus)</p>
               )}
             </div>
           </section>
 
-          {/* BANYAK PAX */}
           <section className="mb-7">
             <h3 className="text-sm font-semibold text-[#212121] mb-3">Berapa Pax?</h3>
             <div className="flex items-center justify-between bg-white border border-zinc-200 rounded-xl p-2">
@@ -395,7 +341,6 @@ export default function ProductDetailPage() {
             </div>
           </section>
 
-          {/* OPSI PCS & HARGA */}
           <section>
             <h3 className="text-sm font-semibold text-[#212121] mb-3">Berapa PCS?</h3>
             <div className="grid grid-cols-3 gap-2">
@@ -428,8 +373,7 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      {/* BOTTOM ACTION BAR */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-zinc-200 p-3 sm:p-4 z-50">
+      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-zinc-200 p-3 sm:p-4 z-40">
         <div className="w-full max-w-md sm:max-w-xl lg:max-w-2xl mx-auto flex items-center gap-3">
           <div className="flex-1 min-w-0">
             <p className="text-[10px] sm:text-xs text-zinc-400">Total Harga</p>
@@ -450,6 +394,64 @@ export default function ProductDetailPage() {
           </button>
         </div>
       </div>
+
+      {/* POP-UP / MODAL NOTIFIKASI */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-xl">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#35A853]/10 text-[#35A853] text-2xl mb-3">
+              ✓
+            </div>
+            <h3 className="text-base font-bold text-[#212121]">Berhasil Ditambahkan!</h3>
+            <p className="mt-1 text-xs text-zinc-500">
+              {product.namaProduk} telah masuk ke keranjang belanja.
+            </p>
+
+            <div className="mt-4 rounded-xl bg-[#F5F5F5] p-3 text-left text-xs space-y-1.5 text-zinc-600 border border-zinc-200">
+              <div className="flex justify-between">
+                <span>Pax:</span>
+                <span className="font-semibold text-[#212121]">{pax} Pax</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Ukuran (PCS):</span>
+                <span className="font-semibold text-[#212121]">{selectedPcsOption?.qty} PCS</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Saus:</span>
+                <span className="font-semibold text-[#212121]">
+                  {selectedSauceObjects.length > 0
+                    ? selectedSauceObjects.map((s) => s.namaTopping).join(", ")
+                    : "Original"}
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-zinc-200 pt-1.5 font-bold text-[#212121]">
+                <span>Total Biaya:</span>
+                <span className="text-[#E52424]">{formatRupiah(total)}</span>
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSuccessModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-zinc-200 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 active:scale-95 transition"
+              >
+                Kembali
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  router.push("/kasir/keranjang");
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-[#E52424] text-xs font-semibold text-white hover:bg-[#D91F1F] active:scale-95 transition"
+              >
+                Lihat Keranjang
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
