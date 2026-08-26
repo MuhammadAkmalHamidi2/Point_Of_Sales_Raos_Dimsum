@@ -14,7 +14,7 @@ const outletRoutes = require("./routers/outlet-router");
 const absenRoutes = require("./routers/absen-router");
 
 const server = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT;
 
 server.use(cors());
 server.use(express.json());
@@ -36,6 +36,6 @@ server.get("/", (req, res) => {
 });
 
 server.listen(PORT, () => {
-  db.sequelize.sync({ alter: true });
+  // db.sequelize.sync({ alter: true });
   console.log(`Server is running at port : ${PORT}`);
 });
