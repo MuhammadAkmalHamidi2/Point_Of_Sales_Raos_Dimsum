@@ -165,20 +165,6 @@ export default function KasirHeader({
 
           <div className="flex items-center gap-2 ml-3">
 
-            {/* NOTIFICATION */}
-
-            <button
-              type="button"
-              aria-label="Notifikasi"
-              className="relative w-10 h-10 rounded-xl flex items-center justify-center hover:bg-[#F5F5F5] active:scale-95 transition"
-            >
-              <span className="text-xl">
-                🔔
-              </span>
-
-              <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#E52424] border-2 border-white" />
-            </button>
-
 
             {/* =================================================
                 CART

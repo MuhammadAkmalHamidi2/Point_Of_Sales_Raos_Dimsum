@@ -108,8 +108,8 @@ export default function ProductDetailPage() {
   const basePrice = selectedPcsOption
     ? Number(selectedPcsOption.harga)
     : product
-    ? Number(product.harga)
-    : 0;
+      ? Number(product.harga)
+      : 0;
 
   const selectedSauceObjects = (product?.toppings || []).filter((s) =>
     selectedSauces.includes(s.id)
@@ -121,9 +121,9 @@ export default function ProductDetailPage() {
   const totalSaucePricePerPax =
     numSauces > 0 && totalPcs > 0
       ? selectedSauceObjects.reduce((acc, sauce) => {
-          const pcsPerSauce = totalPcs / numSauces;
-          return acc + Number(sauce.harga) * pcsPerSauce;
-        }, 0)
+        const pcsPerSauce = totalPcs / numSauces;
+        return acc + Number(sauce.harga) * pcsPerSauce;
+      }, 0)
       : 0;
 
   const unitPricePerPax = basePrice + totalSaucePricePerPax;
@@ -270,11 +270,10 @@ export default function ProductDetailPage() {
                 return (
                   <label
                     key={sauce.id}
-                    className={`flex items-center gap-3 w-full min-h-[52px] px-3.5 rounded-xl border cursor-pointer select-none transition-all duration-200 ${
-                      isSelected
-                        ? "border-[#E52424] bg-[#E52424]/5"
-                        : "border-zinc-200 bg-white hover:border-zinc-300"
-                    }`}
+                    className={`flex items-center gap-3 w-full min-h-[52px] px-3.5 rounded-xl border cursor-pointer select-none transition-all duration-200 ${isSelected
+                      ? "border-[#E52424] bg-[#E52424]/5"
+                      : "border-zinc-200 bg-white hover:border-zinc-300"
+                      }`}
                   >
                     <input
                       type="checkbox"
@@ -284,9 +283,8 @@ export default function ProductDetailPage() {
                     />
                     <div className="flex-1 flex items-center justify-between">
                       <span
-                        className={`text-xs sm:text-sm font-medium ${
-                          isSelected ? "text-[#E52424]" : "text-zinc-700"
-                        }`}
+                        className={`text-xs sm:text-sm font-medium ${isSelected ? "text-[#E52424]" : "text-zinc-700"
+                          }`}
                       >
                         {sauce.namaTopping}
                       </span>
@@ -351,17 +349,15 @@ export default function ProductDetailPage() {
                     key={opt.id}
                     type="button"
                     onClick={() => setSelectedPcsOption(opt)}
-                    className={`h-14 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-[0.98] ${
-                      isSelected
-                        ? "border-[#E52424] bg-[#E52424] text-white"
-                        : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
-                    }`}
+                    className={`h-14 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-[0.98] ${isSelected
+                      ? "border-[#E52424] bg-[#E52424] text-white"
+                      : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                      }`}
                   >
                     <span className="text-xs font-bold">{opt.qty} PCS</span>
                     <span
-                      className={`text-[10px] ${
-                        isSelected ? "text-white/80" : "text-zinc-400"
-                      }`}
+                      className={`text-[10px] ${isSelected ? "text-white/80" : "text-zinc-400"
+                        }`}
                     >
                       {formatRupiah(opt.harga)}
                     </span>

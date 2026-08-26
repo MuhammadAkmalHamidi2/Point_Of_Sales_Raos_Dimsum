@@ -22,7 +22,7 @@ const checkoutTransaksi = async (req, res) => {
     }
 
     // ----------------------------------------------------
-    // AMBIL USER ID DARI TOKEN (req.user ATAU Header Authorization)
+    // 1. AMBIL USER ID DARI TOKEN
     // ----------------------------------------------------
     let userId = req.user?.id;
 
@@ -33,7 +33,7 @@ const checkoutTransaksi = async (req, res) => {
         try {
           const decoded = jwt.verify(
             token,
-            process.env.JWT_SECRET || "secret_key_pos_raos",
+            process.env.JWT_SECRET || "secret_key_pos_raos"
           );
           userId = decoded.id || decoded.userId;
         } catch (err) {
@@ -54,15 +54,34 @@ const checkoutTransaksi = async (req, res) => {
       });
     }
 
-    const karyawan = await KaryawanModel.findOne({ where: { userId } });
-    const outletId = karyawan ? karyawan.outletId : null;
+    // ----------------------------------------------------
+    // 2. CARI OUTLET ID BERDASARKAN KARYAWAN (USER ID)
+    // ----------------------------------------------------
+    const karyawan = await KaryawanModel.findOne({
+      where: { userId },
+      transaction
+    });
 
-    // 1. Generate Kode Invoice Unik
+    if (!karyawan || !karyawan.outletId) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "Gagal transaksi: Data akun kasir ini belum terhubung dengan outlet/karyawan.",
+      });
+    }
+
+    const outletId = karyawan.outletId;
+
+    // ----------------------------------------------------
+    // 3. GENERATE INVOICE
+    // ----------------------------------------------------
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     const invoice = `INV-${dateStr}-${randomNum}`;
 
-    // 2. Mapping data keranjang dengan fallback field (mendukung nama field FE & BE)
+    // ----------------------------------------------------
+    // 4. MAPPING DATA PENJUALAN BESERTA OUTLET ID
+    // ----------------------------------------------------
     const dataPenjualan = items.map((item) => {
       const sausArray = Array.isArray(item.saus || item.sauce)
         ? item.saus || item.sauce
@@ -74,7 +93,7 @@ const checkoutTransaksi = async (req, res) => {
         invoice,
         idProduk: Number(item.idProduk || item.productId || item.id || 0),
         userId: Number(userId),
-        outletId, 
+        outletId: Number(outletId),
         namaProduk: item.namaProduk || item.name || "Produk",
         pcs: Number(item.pcs || 1),
         pax: Number(item.pax || 1),
@@ -85,7 +104,9 @@ const checkoutTransaksi = async (req, res) => {
       };
     });
 
-    // 3. Simpan semua baris barang sekaligus
+    // ----------------------------------------------------
+    // 5. BULK CREATE KE TABEL PENJUALAN
+    // ----------------------------------------------------
     const result = await Penjualan.bulkCreate(dataPenjualan, { transaction });
 
     await transaction.commit();
@@ -96,6 +117,7 @@ const checkoutTransaksi = async (req, res) => {
       data: {
         invoice,
         kasirId: userId,
+        outletId,
         totalBayar,
         metodePembayaran,
         totalItems: result.length,
@@ -115,7 +137,6 @@ const checkoutTransaksi = async (req, res) => {
 
 const tampilPenjualanByUserId = async (req, res) => {
   try {
-    // Ambil userId dari URL params atau dari middleware auth (JWT)
     const userId = req.params.userId || req.user?.id;
 
     if (!userId) {
@@ -125,7 +146,6 @@ const tampilPenjualanByUserId = async (req, res) => {
       });
     }
 
-    // Susun array include secara dinamis untuk mencegah error 'Include unexpected'
     const includeOptions = [];
 
     if (UserModel) {
@@ -215,10 +235,6 @@ const tampilPenjualanByOutletId = async (req, res) => {
       error: error.message,
     });
   }
-};
-
-const tampilPenjualanByOwner = async (req, res) => {
-  
 };
 
 module.exports = {
