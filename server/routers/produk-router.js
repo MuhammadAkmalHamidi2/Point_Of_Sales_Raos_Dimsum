@@ -1,8 +1,12 @@
 const express = require("express");
-
+const upload = require("../middlewares/upload");
 const {
+  getAllProdukAdmin,
   getProdukByCategory,
   getProdukById,
+  createProduk,
+  updateProduk,
+  deleteProduk,
   getAllSauce,
   getAllQty,
   getHargaByPax,
@@ -10,15 +14,17 @@ const {
 
 const router = express.Router();
 
-// Detail Produk
-router.get("/detail/:id", getProdukById);
+// Route Admin dengan upload middleware
+router.get("/all", getAllProdukAdmin);
+router.post("/", upload.single("produkImg"), createProduk);
+router.put("/:id", upload.single("produkImg"), updateProduk);
+router.delete("/:id", deleteProduk);
 
-// Endpoint Saus & Harga Dynamic
+// Detail & Relasi Produk
+router.get("/detail/:id", getProdukById);
 router.get("/:productId/sauces", getAllSauce);
 router.get("/:productId/qty", getAllQty);
 router.get("/:productId/harga", getHargaByPax);
-
-// Produk berdasarkan Kategori
-router.get("/:categoryId", getProdukByCategory);
+router.get("/category/:categoryId", getProdukByCategory);
 
 module.exports = router;

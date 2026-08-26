@@ -15,7 +15,7 @@ const penjualanRoutes = require('./routers/penjualan-router');
 const absenRoutes = require('./routers/absen-router');
 
 const server = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT;
 
 // =====================================================
 // MIDDLEWARE
@@ -49,6 +49,6 @@ server.use('/api/absen', absenRoutes);
 // START SERVER
 // =====================================================
 server.listen(PORT, () => {
-  db.sequelize.sync({ alter: true });
+  // db.sequelize.sync({ alter: true });
   console.log(`Server is running at port : ${PORT}`);
 });
