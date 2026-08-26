@@ -15,7 +15,7 @@ const absenRoutes = require("./routers/absen-router");
 const dashboardRoutes = require("./routers/dashboard-router");
 
 const server = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT;
 
 server.use(cors());
 server.use(express.json());
