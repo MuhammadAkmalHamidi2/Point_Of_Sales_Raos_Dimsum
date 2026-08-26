@@ -13,12 +13,17 @@ export default function BottomNavigation() {
       icon: "🛒",
     },
     {
-      name: "History",
+      name: "Riwayat",
       href: "/kasir/history",
       icon: "🕘",
     },
     {
-      name: "Profile",
+      name: "Absensi",
+      href: "/absen",
+      icon: "📝",
+    },
+    {
+      name: "Akun",
       href: "/profile",
       icon: "👤",
     },
@@ -26,40 +31,30 @@ export default function BottomNavigation() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 h-16 bg-white border-t border-zinc-200">
-
-      <div className="max-w-md mx-auto h-full grid grid-cols-3">
-
+      <div className="max-w-md mx-auto h-full grid grid-cols-4">
         {menus.map((menu) => {
+          // Logika pengecekan aktif agar /kasir tidak bentrok dengan /kasir/history
           const active =
-            pathname === menu.href ||
-            (menu.href === "/kasir" &&
-              pathname.startsWith("/kasir"));
+            menu.href === "/kasir"
+              ? pathname === "/kasir" ||
+                (pathname.startsWith("/kasir/") &&
+                  !pathname.startsWith("/kasir/history"))
+              : pathname === menu.href || pathname.startsWith(`${menu.href}/`);
 
           return (
             <Link
               key={menu.href}
               href={menu.href}
               className={`flex flex-col items-center justify-center gap-1 transition ${
-                active
-                  ? "text-[#E52424]"
-                  : "text-zinc-400"
+                active ? "text-[#E52424]" : "text-zinc-400 hover:text-zinc-600"
               }`}
             >
-
-              <span className="text-lg">
-                {menu.icon}
-              </span>
-
-              <span className="text-[10px] font-medium">
-                {menu.name}
-              </span>
-
+              <span className="text-lg">{menu.icon}</span>
+              <span className="text-[10px] font-medium">{menu.name}</span>
             </Link>
           );
         })}
-
       </div>
-
     </nav>
   );
 }
