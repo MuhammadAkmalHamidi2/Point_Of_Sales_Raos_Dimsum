@@ -1,11 +1,8 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, useCallback, FormEvent } from "react";
 import { api } from "@/lib/api";
-
-// =====================================================
-// TYPES
-// =====================================================
+import Swal from "sweetalert2";
 
 type Outlet = {
   id: number;
@@ -48,21 +45,15 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   return apiError.response?.data?.error || apiError.response?.data?.message || fallback;
 }
 
-// TODO: belum ada endpoint absensi di backend (app/api/absen/route.ts masih stub,
-// belum nyambung ke DB). Begitu backend-nya siap, ganti dummyAbsensi ini dengan
-// fetch ke API-nya, sama seperti karyawanList di bawah.
-const dummyAbsensi = [
-  { id: 1, name: "Budi Santoso", checkIn: "08:05", checkOut: "17:02", status: "Hadir" },
-  { id: 2, name: "Siti Aminah", checkIn: "08:10", checkOut: "17:15", status: "Hadir" },
-  { id: 3, name: "Ahmad Fauzi", checkIn: "-", checkOut: "-", status: "Izin" },
-  { id: 4, name: "Dewi Lestari", checkIn: "-", checkOut: "-", status: "Sakit" },
-];
+type AbsensiItem = {
+  id: number;
+  name: string;
+  outletName: string | null;
+  jamAbsen: string;
+  status: "Hadir" | "Belum Absen";
+  foto: string | null;
+};
 
-// =====================================================
-// HELPER
-// =====================================================
-
-// Ubah "Budi Santoso" -> "budisantoso" buat saran username otomatis
 function suggestUsername(name: string) {
   return name.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -71,16 +62,9 @@ function hasAlphaNumeric(value: string) {
   return /[a-z0-9]/i.test(value);
 }
 
-// Saran password akun kasir baru: username + "123".
-// Backend (createKaryawan) generate password dengan pola yang sama,
-// jadi teks ini cuma preview di form, bukan yang benar-benar dikirim ke server.
 function suggestPassword(name: string) {
   return suggestUsername(name) + "123";
 }
-
-// =====================================================
-// ROW KARYAWAN
-// =====================================================
 
 function KaryawanRow({
   emp,
@@ -138,10 +122,6 @@ function KaryawanRow({
 export default function KaryawanPage() {
   const [mainTab, setMainTab] = useState<"Data" | "Absensi">("Data");
   const [subCategory, setSubCategory] = useState<"Produksi" | "Tenant">("Tenant");
-
-  // ---------------------------------------------------
-  // DATA KARYAWAN (real, dari GET /api/karyawan)
-  // ---------------------------------------------------
   const [karyawanList, setKaryawanList] = useState<Karyawan[]>([]);
   const [isLoadingKaryawan, setIsLoadingKaryawan] = useState(true);
 
@@ -168,9 +148,6 @@ export default function KaryawanPage() {
     }
   };
 
-  // ---------------------------------------------------
-  // DATA OUTLET / TENANT (real, dari GET /api/outlets)
-  // ---------------------------------------------------
   const [outletList, setOutletList] = useState<Outlet[]>([]);
 
   const fetchOutlets = async () => {
@@ -190,9 +167,36 @@ export default function KaryawanPage() {
     void loadData();
   }, []);
 
-  // ---------------------------------------------------
-  // FORM STATE
-  // ---------------------------------------------------
+  const [absensiList, setAbsensiList] = useState<AbsensiItem[]>([]);
+  const [isLoadingAbsensi, setIsLoadingAbsensi] = useState(true);
+  const [attendanceDate, setAttendanceDate] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  });
+
+  const fetchAbsensi = useCallback(async () => {
+    try {
+      setIsLoadingAbsensi(true);
+      const response = await api.get<{ data?: AbsensiItem[] }>(`/api/absen/all?date=${attendanceDate}`);
+      setAbsensiList(response.data.data ?? []);
+    } catch (error) {
+      console.error("Gagal mengambil data absensi:", error);
+    } finally {
+      setIsLoadingAbsensi(false);
+    }
+  }, [attendanceDate]);
+
+  useEffect(() => {
+    const loadAbsensi = async () => {
+      await fetchAbsensi();
+    };
+
+    void loadAbsensi();
+  }, [fetchAbsensi]);
+
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formName, setFormName] = useState("");
@@ -208,10 +212,6 @@ export default function KaryawanPage() {
   const [newAccountInfo, setNewAccountInfo] = useState<{ username: string; password: string } | null>(null);
 
   const filteredKaryawan = karyawanList.filter((emp) => emp.category === subCategory);
-
-  // ---------------------------------------------------
-  // FORM HELPERS
-  // ---------------------------------------------------
 
   const openAddForm = () => {
     setEditingId(null);
@@ -232,7 +232,7 @@ export default function KaryawanPage() {
     setFormOutletId(emp.outletId ?? "");
     setFormPhone(emp.phone ?? "");
     setFormUsername(emp.username ?? "");
-    setUsernameTouched(true); // pas edit, jangan auto-override username yang udah ada
+    setUsernameTouched(true); 
     setUsernameError("");
     setIsFormOpen(true);
   };
@@ -242,8 +242,6 @@ export default function KaryawanPage() {
     setEditingId(null);
   };
 
-  // Setiap nama diketik, saran username ikut update otomatis —
-  // tapi kalau admin udah pernah ngedit username manual, jangan ditimpa lagi.
   const handleNameChange = (value: string) => {
     setFormName(value);
     if (!usernameTouched) {
@@ -256,10 +254,6 @@ export default function KaryawanPage() {
     setFormUsername(value);
     setUsernameError("");
   };
-
-  // ---------------------------------------------------
-  // SUBMIT (POST / PUT ke /api/karyawan)
-  // ---------------------------------------------------
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -313,6 +307,13 @@ export default function KaryawanPage() {
       } else {
         // MODE EDIT
         await api.put(`/api/karyawan/${editingId}`, payload);
+        closeForm();
+        await Swal.fire({
+          icon: "success",
+          title: "Berhasil!",
+          text: "Data karyawan berhasil diperbarui.",
+          confirmButtonText: "OK",
+        });
       }
 
       await fetchKaryawan();
@@ -325,15 +326,17 @@ export default function KaryawanPage() {
     }
   };
 
-  // ---------------------------------------------------
-  // DELETE (DELETE ke /api/karyawan/:id)
-  // ---------------------------------------------------
-
   const handleDelete = async (id: number) => {
-    const confirmed = confirm(
-      "Yakin ingin menghapus karyawan ini? Akun login kasirnya (jika ada) juga akan ikut dihapus."
-    );
-    if (!confirmed) return;
+    const result = await Swal.fire({
+      title: "Yakin ingin menghapus?",
+      text: "Data karyawan yang dihapus tidak dapat dikembalikan.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, Hapus",
+      cancelButtonText: "Batal",
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       await api.delete(`/api/karyawan/${id}`);
@@ -417,42 +420,47 @@ export default function KaryawanPage() {
         </div>
 
         {/* SECTION: ABSENSI KARYAWAN */}
-        {/* TODO: belum ada backend absensi (lihat app/api/absen/route.ts, masih stub).
-            Begitu endpoint-nya siap, ganti dummyAbsensi dengan fetch asli seperti karyawanList di atas. */}
         <div className={`space-y-4 ${mainTab === "Absensi" ? "block" : "hidden md:block"}`}>
           <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
             <div className="flex justify-between items-center">
               <h2 className="text-sm font-bold text-[#212121]">Absensi Karyawan</h2>
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#212121] bg-zinc-50 px-3 py-1 rounded-xl border border-zinc-200/60">
-                <button className="text-zinc-400 font-bold">&lt;</button>
-                <span>24 Mei 2024</span>
-                <button className="text-zinc-400 font-bold">&gt;</button>
-              </div>
+              <input
+                type="date"
+                value={attendanceDate}
+                onChange={(event) => setAttendanceDate(event.target.value)}
+                aria-label="Pilih tanggal absensi"
+                className="text-xs font-semibold text-zinc-500 bg-zinc-50 px-2 py-1 rounded-xl border border-zinc-200/60 outline-none focus:border-[#E52424]"
+              />
             </div>
 
-            <div className="divide-y divide-zinc-100">
-              {dummyAbsensi.map((item) => (
-                <div key={item.id} className="py-3.5 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-bold text-[#212121]">{item.name}</p>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      {item.checkIn} - {item.checkOut}
-                    </p>
+            {isLoadingAbsensi ? (
+              <p className="text-xs text-zinc-400 py-4 text-center">Memuat data absensi...</p>
+            ) : absensiList.length === 0 ? (
+              <p className="text-xs text-zinc-400 py-4 text-center">Belum ada karyawan tenant.</p>
+            ) : (
+              <div className="divide-y divide-zinc-100">
+                {absensiList.map((item) => (
+                  <div key={item.id} className="py-3.5 flex justify-between items-center">
+                    <div>
+                      <p className="text-xs font-bold text-[#212121]">{item.name}</p>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        {item.outletName ?? "-"}
+                        {item.jamAbsen !== "-" && <span> · {item.jamAbsen} WIB</span>}
+                      </p>
+                    </div>
+                    <span
+                      className={`text-[10px] px-3 py-1 rounded-full font-semibold ${
+                        item.status === "Hadir"
+                          ? "bg-emerald-50 text-emerald-600"
+                          : "bg-zinc-100 text-zinc-500"
+                      }`}
+                    >
+                      {item.status}
+                    </span>
                   </div>
-                  <span
-                    className={`text-[10px] px-3 py-1 rounded-full font-semibold ${
-                      item.status === "Hadir"
-                        ? "bg-emerald-50 text-emerald-600"
-                        : item.status === "Izin"
-                        ? "bg-blue-50 text-blue-600"
-                        : "bg-red-50 text-red-600"
-                    }`}
-                  >
-                    {item.status}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

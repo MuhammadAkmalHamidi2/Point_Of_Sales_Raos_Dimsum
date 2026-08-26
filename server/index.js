@@ -12,6 +12,7 @@ const penjualanRoutes = require("./routers/penjualan-router");
 const karyawanRoutes = require("./routers/karyawan-router");
 const outletRoutes = require("./routers/outlet-router");
 const absenRoutes = require("./routers/absen-router");
+const dashboardRoutes = require("./routers/dashboard-router");
 
 const server = express();
 const PORT = process.env.PORT || 5000;
@@ -28,6 +29,7 @@ server.use("/api/penjualan", penjualanRoutes);
 server.use("/api/karyawan", karyawanRoutes);
 server.use("/api/outlets", outletRoutes);
 server.use("/api/absen", absenRoutes);
+server.use("/api/dashboard", dashboardRoutes);
 
 server.get("/", (req, res) => {
   res.json({
@@ -36,6 +38,6 @@ server.get("/", (req, res) => {
 });
 
 server.listen(PORT, () => {
-  db.sequelize.sync({ alter: true });
+  // db.sequelize.sync({ alter: true });
   console.log(`Server is running at port : ${PORT}`);
 });
