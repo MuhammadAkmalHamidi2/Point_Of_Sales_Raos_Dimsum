@@ -1,82 +1,70 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useEffect, useCallback, FormEvent } from "react";
+import { api } from "@/lib/api";
+import Swal from "sweetalert2";
 
-// ==== SIMULASI USER YANG LOGIN (nanti diganti baca dari localStorage) ====
-// role: "master" -> pemilik brand, lihat SEMUA karyawan di semua tenant, dikelompokkan per owner
-// role: "admin"  -> akun milik Owner A/B, lihat karyawan tenant miliknya sendiri saja
-// NOTE: samain currentUser.id ini dengan yang di admin/tenant/page.tsx pas simulasi manual.
-const currentUser = {
-  id: 10, // ganti angka ini untuk simulasi admin/owner yang beda (misal jadi 20)
-  role: "master" as "master" | "admin", // ganti ke "master" untuk simulasi akun pemilik brand
+type Outlet = {
+  id: number;
+  outletName: string;
+  address?: string | null;
+  status?: boolean;
 };
-
-const ownerOptions = [
-  { id: 10, name: "Owner A - Budi" },
-  { id: 20, name: "Owner B - Rina" },
-];
-
-// =====================================================
-// TYPES
-// =====================================================
 
 type Karyawan = {
   id: number;
   name: string;
-  role: "Produksi" | "Tenant";
-  // Field di bawah ini cuma kepake kalau role === "Tenant",
-  // karena cuma karyawan tenant yang butuh akun login kasir.
-  tenantId?: number;
-  tenantName?: string;
-  username?: string;
-  mustChangePassword?: boolean;
+  category: "Produksi" | "Tenant";
+  phone: string | null;
+  outletId: number | null;
+  outletName: string | null;
+  username: string | null;
 };
 
-// Password default buat akun kasir yang baru dibuat.
-// Kasir wajib ganti password ini pas pertama kali login.
-// TODO: sambungkan ke API backend nanti — ini cuma placeholder di frontend.
-const DEFAULT_KASIR_PASSWORD = "karyawan123";
+type KaryawanResponse = {
+  id: number;
+  name: string;
+  category: Karyawan["category"];
+  phone?: string | null;
+  outletId?: number | null;
+  outlet?: { outletName: string } | null;
+  account?: { username: string } | null;
+};
 
-// =====================================================
-// DUMMY DATA
-// =====================================================
+type ApiError = {
+  response?: {
+    data?: {
+      error?: string;
+      message?: string;
+    };
+  };
+};
 
-// TODO: nanti diganti fetch dari GET /api/tenant
-// ownerId ditambahin biar bisa nge-filter tenant (dan karyawannya) sesuai owner yang login,
-// samain isinya dengan initialTenants di admin/tenant/page.tsx.
-const dummyTenants = [
-  { id: 1, name: "Raos Dimsum - DU", ownerId: 10 },
-  { id: 2, name: "Raos Dimsum - Dago", ownerId: 10 },
-  { id: 3, name: "Raos Dimsum - Unpas", ownerId: 20 },
-  { id: 4, name: "Raos Dimsum - UPI", ownerId: 20 },
-];
+function getApiErrorMessage(error: unknown, fallback: string) {
+  const apiError = error as ApiError;
+  return apiError.response?.data?.error || apiError.response?.data?.message || fallback;
+}
 
-const initialKaryawan: Karyawan[] = [
-  { id: 1, name: "Budi Santoso", role: "Tenant", tenantId: 1, tenantName: "Raos Dimsum - DU", username: "budisantoso", mustChangePassword: true },
-  { id: 2, name: "Siti Aminah", role: "Tenant", tenantId: 1, tenantName: "Raos Dimsum - DU", username: "sitiaminah", mustChangePassword: false },
-  { id: 3, name: "Ahmad Fauzi", role: "Tenant", tenantId: 2, tenantName: "Raos Dimsum - Dago", username: "ahmadfauzi", mustChangePassword: true },
-  { id: 4, name: "Dewi Lestari", role: "Produksi" },
-];
+type AbsensiItem = {
+  id: number;
+  name: string;
+  outletName: string | null;
+  jamAbsen: string;
+  status: "Hadir" | "Belum Absen";
+  foto: string | null;
+};
 
-const dummyAbsensi = [
-  { id: 1, name: "Budi Santoso", checkIn: "08:05", checkOut: "17:02", status: "Hadir" },
-  { id: 2, name: "Siti Aminah", checkIn: "08:10", checkOut: "17:15", status: "Hadir" },
-  { id: 3, name: "Ahmad Fauzi", checkIn: "-", checkOut: "-", status: "Izin" },
-  { id: 4, name: "Dewi Lestari", checkIn: "-", checkOut: "-", status: "Sakit" },
-];
-
-// =====================================================
-// HELPER
-// =====================================================
-
-// Ubah "Budi Santoso" -> "budisantoso" buat saran username otomatis
 function suggestUsername(name: string) {
   return name.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-// =====================================================
-// ROW KARYAWAN (dipakai di tampilan flat maupun grouped per owner)
-// =====================================================
+function hasAlphaNumeric(value: string) {
+  return /[a-z0-9]/i.test(value);
+}
+
+function suggestPassword(name: string) {
+  return suggestUsername(name) + "123";
+}
 
 function KaryawanRow({
   emp,
@@ -91,17 +79,19 @@ function KaryawanRow({
     <div className="py-3.5 flex justify-between items-center">
       <div>
         <p className="text-xs font-bold text-[#212121]">{emp.name}</p>
-        {emp.role === "Tenant" ? (
+        {emp.category === "Tenant" ? (
           <div className="mt-0.5 space-y-0.5">
             <p className="text-[11px] text-zinc-400">
-              {emp.tenantName ?? "Belum ditempatkan"} · @{emp.username}
+              {emp.outletName ?? "Belum ditempatkan"}
+              {emp.username ? ` · @${emp.username}` : ""}
             </p>
-            {emp.mustChangePassword && (
-              <p className="text-[10px] text-amber-600 font-semibold">Belum ganti password default</p>
-            )}
+            {emp.phone && <p className="text-[11px] text-zinc-400">{emp.phone}</p>}
           </div>
         ) : (
-          <p className="text-[11px] text-zinc-400 mt-0.5">{emp.role}</p>
+          <div className="mt-0.5 space-y-0.5">
+            <p className="text-[11px] text-zinc-400">{emp.category}</p>
+            {emp.phone && <p className="text-[11px] text-zinc-400">{emp.phone}</p>}
+          </div>
         )}
       </div>
       <div className="flex items-center gap-1.5">
@@ -132,57 +122,103 @@ function KaryawanRow({
 export default function KaryawanPage() {
   const [mainTab, setMainTab] = useState<"Data" | "Absensi">("Data");
   const [subCategory, setSubCategory] = useState<"Produksi" | "Tenant">("Tenant");
+  const [karyawanList, setKaryawanList] = useState<Karyawan[]>([]);
+  const [isLoadingKaryawan, setIsLoadingKaryawan] = useState(true);
 
-  const [karyawanList, setKaryawanList] = useState<Karyawan[]>(initialKaryawan);
+  const fetchKaryawan = async () => {
+    try {
+      setIsLoadingKaryawan(true);
+      const response = await api.get<{ data?: KaryawanResponse[] }>("/api/karyawan");
+
+      const mapped: Karyawan[] = (response.data.data ?? []).map((emp) => ({
+        id: emp.id,
+        name: emp.name,
+        category: emp.category,
+        phone: emp.phone ?? null,
+        outletId: emp.outletId ?? null,
+        outletName: emp.outlet?.outletName ?? null,
+        username: emp.account?.username ?? null,
+      }));
+
+      setKaryawanList(mapped);
+    } catch (error) {
+      console.error("Gagal mengambil data karyawan:", error);
+    } finally {
+      setIsLoadingKaryawan(false);
+    }
+  };
+
+  const [outletList, setOutletList] = useState<Outlet[]>([]);
+
+  const fetchOutlets = async () => {
+    try {
+      const response = await api.get<{ data?: Outlet[] }>("/api/outlets");
+      setOutletList(response.data.data ?? []);
+    } catch (error) {
+      console.error("Gagal mengambil data outlet:", error);
+    }
+  };
+
+  useEffect(() => {
+    const loadData = async () => {
+      await Promise.all([fetchKaryawan(), fetchOutlets()]);
+    };
+
+    void loadData();
+  }, []);
+
+  const [absensiList, setAbsensiList] = useState<AbsensiItem[]>([]);
+  const [isLoadingAbsensi, setIsLoadingAbsensi] = useState(true);
+  const [attendanceDate, setAttendanceDate] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  });
+
+  const fetchAbsensi = useCallback(async () => {
+    try {
+      setIsLoadingAbsensi(true);
+      const response = await api.get<{ data?: AbsensiItem[] }>(`/api/absen/all?date=${attendanceDate}`);
+      setAbsensiList(response.data.data ?? []);
+    } catch (error) {
+      console.error("Gagal mengambil data absensi:", error);
+    } finally {
+      setIsLoadingAbsensi(false);
+    }
+  }, [attendanceDate]);
+
+  useEffect(() => {
+    const loadAbsensi = async () => {
+      await fetchAbsensi();
+    };
+
+    void loadAbsensi();
+  }, [fetchAbsensi]);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formName, setFormName] = useState("");
-  const [formRole, setFormRole] = useState<"Produksi" | "Tenant">("Tenant");
-  const [formTenantId, setFormTenantId] = useState<number | "">("");
+  const [formCategory, setFormCategory] = useState<"Produksi" | "Tenant">("Tenant");
+  const [formOutletId, setFormOutletId] = useState<number | "">("");
+  const [formPhone, setFormPhone] = useState("");
   const [formUsername, setFormUsername] = useState("");
   const [usernameTouched, setUsernameTouched] = useState(false);
   const [usernameError, setUsernameError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Modal kecil buat nampilin username + password default setelah karyawan baru berhasil ditambah
+  // Modal info username + password setelah karyawan tenant baru berhasil ditambah
   const [newAccountInfo, setNewAccountInfo] = useState<{ username: string; password: string } | null>(null);
 
-  // INTI FITUR "tampil karyawan by tenant yang dipegang owner"
-  // Tenant yang boleh dilihat/dipilih: master -> semua tenant, admin -> tenant miliknya sendiri saja.
-  const visibleTenants =
-    currentUser.role === "master"
-      ? dummyTenants
-      : dummyTenants.filter((t) => t.ownerId === currentUser.id);
-  const visibleTenantIds = new Set(visibleTenants.map((t) => t.id));
-
-  // Karyawan kategori "Produksi" gak nempel ke tenant manapun jadi tetap tampil apa adanya.
-  // Karyawan kategori "Tenant" cuma ditampilkan kalau tenantId-nya termasuk tenant yang visible di atas.
-  const filteredKaryawan = karyawanList.filter(
-    (emp) =>
-      emp.role === subCategory &&
-      (emp.role === "Produksi" || (emp.tenantId !== undefined && visibleTenantIds.has(emp.tenantId)))
-  );
-
-  // Khusus role master & kategori Tenant: kelompokkan karyawan per owner, sama seperti di admin/tenant/page.tsx
-  const groupedByOwner = ownerOptions
-    .map((owner) => ({
-      owner,
-      karyawan: filteredKaryawan.filter((emp) => {
-        const tenant = dummyTenants.find((t) => t.id === emp.tenantId);
-        return tenant?.ownerId === owner.id;
-      }),
-    }))
-    .filter((group) => group.karyawan.length > 0);
-
-  // ---------------------------------------------------
-  // FORM HELPERS
-  // ---------------------------------------------------
+  const filteredKaryawan = karyawanList.filter((emp) => emp.category === subCategory);
 
   const openAddForm = () => {
     setEditingId(null);
     setFormName("");
-    setFormRole(subCategory);
-    setFormTenantId("");
+    setFormCategory(subCategory);
+    setFormOutletId("");
+    setFormPhone("");
     setFormUsername("");
     setUsernameTouched(false);
     setUsernameError("");
@@ -192,10 +228,11 @@ export default function KaryawanPage() {
   const openEditForm = (emp: Karyawan) => {
     setEditingId(emp.id);
     setFormName(emp.name);
-    setFormRole(emp.role);
-    setFormTenantId(emp.tenantId ?? "");
+    setFormCategory(emp.category);
+    setFormOutletId(emp.outletId ?? "");
+    setFormPhone(emp.phone ?? "");
     setFormUsername(emp.username ?? "");
-    setUsernameTouched(true); // pas edit, jangan auto-override username yang udah ada
+    setUsernameTouched(true); 
     setUsernameError("");
     setIsFormOpen(true);
   };
@@ -205,8 +242,6 @@ export default function KaryawanPage() {
     setEditingId(null);
   };
 
-  // Setiap nama diketik, saran username ikut update otomatis —
-  // tapi kalau admin udah pernah ngedit username manual, jangan ditimpa lagi.
   const handleNameChange = (value: string) => {
     setFormName(value);
     if (!usernameTouched) {
@@ -220,29 +255,26 @@ export default function KaryawanPage() {
     setUsernameError("");
   };
 
-  // ---------------------------------------------------
-  // SUBMIT
-  // ---------------------------------------------------
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    // Validasi khusus kalau kategorinya Tenant (butuh akun login)
-    if (formRole === "Tenant") {
-      if (!formTenantId) {
-        alert("Pilih tenant penempatan karyawan ini dulu.");
+    if (!formName.trim() || !hasAlphaNumeric(formName)) {
+      alert("Nama karyawan tidak boleh hanya berisi spasi atau simbol.");
+      return;
+    }
+
+    if (formCategory === "Tenant") {
+      if (!formOutletId) {
+        alert("Pilih tenant/outlet penempatan karyawan ini dulu.");
         return;
       }
 
       const cleanUsername = formUsername.trim().toLowerCase();
-      if (!cleanUsername) {
-        setUsernameError("Username wajib diisi untuk karyawan tenant.");
+      if (!cleanUsername || !hasAlphaNumeric(cleanUsername)) {
+        setUsernameError("Username tidak boleh hanya berisi spasi atau simbol.");
         return;
       }
 
-      // Cek username udah dipakai karyawan lain atau belum
-      // TODO: nanti ini diganti pengecekan ke database lewat API,
-      // bukan cuma ngecek array lokal di frontend.
       const isDuplicate = karyawanList.some(
         (emp) => emp.username === cleanUsername && emp.id !== editingId
       );
@@ -252,67 +284,67 @@ export default function KaryawanPage() {
       }
     }
 
-    const tenant = dummyTenants.find((t) => t.id === formTenantId);
+    const payload = {
+      name: formName,
+      category: formCategory,
+      phone: formPhone.trim() || null,
+      outletId: formCategory === "Tenant" ? formOutletId : null,
+      username: formCategory === "Tenant" ? formUsername.trim().toLowerCase() : null,
+    };
 
-    if (editingId !== null) {
-      // ---- MODE EDIT ----
-      setKaryawanList((prev) =>
-        prev.map((emp) =>
-          emp.id === editingId
-            ? {
-                ...emp,
-                name: formName,
-                role: formRole,
-                tenantId: formRole === "Tenant" ? (formTenantId as number) : undefined,
-                tenantName: formRole === "Tenant" ? tenant?.name : undefined,
-                username: formRole === "Tenant" ? formUsername.trim().toLowerCase() : undefined,
-              }
-            : emp
-        )
-      );
-      // TODO: kalau tenant penempatan berubah, nanti panggil
-      // PUT /api/karyawan/:id buat update tenantId-nya di backend.
-    } else {
-      // ---- MODE TAMBAH BARU ----
-      const newId = Math.max(0, ...karyawanList.map((e) => e.id)) + 1;
-      const cleanUsername = formUsername.trim().toLowerCase();
+    setIsSubmitting(true);
+    try {
+      if (editingId === null) {
+        // MODE TAMBAH
+        const response = await api.post("/api/karyawan", payload);
 
-      const newKaryawan: Karyawan = {
-        id: newId,
-        name: formName,
-        role: formRole,
-        ...(formRole === "Tenant"
-          ? {
-              tenantId: formTenantId as number,
-              tenantName: tenant?.name,
-              username: cleanUsername,
-              mustChangePassword: true,
-            }
-          : {}),
-      };
-
-      setKaryawanList((prev) => [...prev, newKaryawan]);
-
-      // Kalau karyawan tenant (kasir) baru ditambah, otomatis "dibikinin" akun.
-      // TODO: sambungkan ke backend — nanti di sini kita panggil
-      // POST /api/karyawan yang di baliknya juga langsung bikin row baru
-      // di tabel User (roleId = kasir, tenantId = formTenantId, mustChangePassword = true).
-      if (formRole === "Tenant") {
-        setNewAccountInfo({ username: cleanUsername, password: DEFAULT_KASIR_PASSWORD });
+        if (response.data.data?.account) {
+          setNewAccountInfo({
+            username: response.data.data.account.username,
+            password: response.data.data.account.password,
+          });
+        }
+      } else {
+        // MODE EDIT
+        await api.put(`/api/karyawan/${editingId}`, payload);
+        closeForm();
+        await Swal.fire({
+          icon: "success",
+          title: "Berhasil!",
+          text: "Data karyawan berhasil diperbarui.",
+          confirmButtonText: "OK",
+        });
       }
-    }
 
-    closeForm();
+      await fetchKaryawan();
+      closeForm();
+    } catch (error: unknown) {
+      console.error("Gagal menyimpan karyawan:", error);
+      alert(getApiErrorMessage(error, "Gagal menyimpan data karyawan."));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDelete = (id: number) => {
-    const confirmed = confirm(
-      "Yakin ingin menghapus karyawan ini? Akun login kasirnya (jika ada) juga akan ikut dihapus."
-    );
-    if (!confirmed) return;
-    setKaryawanList((prev) => prev.filter((emp) => emp.id !== id));
-    // TODO: DELETE /api/karyawan/:id — backend juga perlu hapus/nonaktifkan
-    // akun User yang terhubung (roleId kasir) biar gak bisa login lagi.
+  const handleDelete = async (id: number) => {
+    const result = await Swal.fire({
+      title: "Yakin ingin menghapus?",
+      text: "Data karyawan yang dihapus tidak dapat dikembalikan.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, Hapus",
+      cancelButtonText: "Batal",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      await api.delete(`/api/karyawan/${id}`);
+      await fetchKaryawan();
+    } catch (error: unknown) {
+      console.error("Gagal menghapus karyawan:", error);
+      alert(getApiErrorMessage(error, "Gagal menghapus karyawan."));
+    }
   };
 
   return (
@@ -320,11 +352,7 @@ export default function KaryawanPage() {
       <div className="bg-white p-4 md:p-5 rounded-2xl border border-zinc-200/80 flex justify-between items-center shadow-2xs">
         <div>
           <h1 className="text-base md:text-xl font-bold text-[#212121]">Kelola Karyawan</h1>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            {currentUser.role === "master"
-              ? "Manajemen staf seluruh tenant, dikelompokkan per owner"
-              : "Manajemen staf tenant yang kamu miliki"}
-          </p>
+          <p className="text-xs text-zinc-400 mt-0.5">Manajemen staf produksi dan tenant</p>
         </div>
       </div>
 
@@ -344,7 +372,7 @@ export default function KaryawanPage() {
             mainTab === "Absensi" ? "bg-[#E52424] text-white" : "text-zinc-500"
           }`}
         >
-          Absensi Karyawan
+          Absensi Karyawan iiii
         </button>
       </div>
 
@@ -370,27 +398,11 @@ export default function KaryawanPage() {
               </div>
             </div>
 
-            {filteredKaryawan.length === 0 ? (
+            {isLoadingKaryawan ? (
+              <p className="text-xs text-zinc-400 py-4 text-center">Memuat data karyawan...</p>
+            ) : filteredKaryawan.length === 0 ? (
               <p className="text-xs text-zinc-400 py-4 text-center">Belum ada karyawan di kategori ini.</p>
-            ) : currentUser.role === "master" && subCategory === "Tenant" ? (
-              // TAMPILAN MASTER khusus kategori Tenant: dikelompokkan per owner (mirip admin/tenant/page.tsx)
-              <div className="space-y-4">
-                {groupedByOwner.map((group) => (
-                  <div key={group.owner.id} className="space-y-1">
-                    <p className="text-[11px] font-bold text-zinc-500 px-1">
-                      {group.owner.name}{" "}
-                      <span className="font-normal text-zinc-400">({group.karyawan.length} karyawan)</span>
-                    </p>
-                    <div className="divide-y divide-zinc-100">
-                      {group.karyawan.map((emp) => (
-                        <KaryawanRow key={emp.id} emp={emp} onEdit={openEditForm} onDelete={handleDelete} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
             ) : (
-              // TAMPILAN ADMIN (mewakili 1 owner), atau master di kategori Produksi: list rata biasa
               <div className="divide-y divide-zinc-100">
                 {filteredKaryawan.map((emp) => (
                   <KaryawanRow key={emp.id} emp={emp} onEdit={openEditForm} onDelete={handleDelete} />
@@ -412,36 +424,43 @@ export default function KaryawanPage() {
           <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
             <div className="flex justify-between items-center">
               <h2 className="text-sm font-bold text-[#212121]">Absensi Karyawan</h2>
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#212121] bg-zinc-50 px-3 py-1 rounded-xl border border-zinc-200/60">
-                <button className="text-zinc-400 font-bold">&lt;</button>
-                <span>24 Mei 2024</span>
-                <button className="text-zinc-400 font-bold">&gt;</button>
-              </div>
+              <input
+                type="date"
+                value={attendanceDate}
+                onChange={(event) => setAttendanceDate(event.target.value)}
+                aria-label="Pilih tanggal absensi"
+                className="text-xs font-semibold text-zinc-500 bg-zinc-50 px-2 py-1 rounded-xl border border-zinc-200/60 outline-none focus:border-[#E52424]"
+              />
             </div>
 
-            <div className="divide-y divide-zinc-100">
-              {dummyAbsensi.map((item) => (
-                <div key={item.id} className="py-3.5 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-bold text-[#212121]">{item.name}</p>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      {item.checkIn} - {item.checkOut}
-                    </p>
+            {isLoadingAbsensi ? (
+              <p className="text-xs text-zinc-400 py-4 text-center">Memuat data absensi...</p>
+            ) : absensiList.length === 0 ? (
+              <p className="text-xs text-zinc-400 py-4 text-center">Belum ada karyawan tenant.</p>
+            ) : (
+              <div className="divide-y divide-zinc-100">
+                {absensiList.map((item) => (
+                  <div key={item.id} className="py-3.5 flex justify-between items-center">
+                    <div>
+                      <p className="text-xs font-bold text-[#212121]">{item.name}</p>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        {item.outletName ?? "-"}
+                        {item.jamAbsen !== "-" && <span> · {item.jamAbsen} WIB</span>}
+                      </p>
+                    </div>
+                    <span
+                      className={`text-[10px] px-3 py-1 rounded-full font-semibold ${
+                        item.status === "Hadir"
+                          ? "bg-emerald-50 text-emerald-600"
+                          : "bg-zinc-100 text-zinc-500"
+                      }`}
+                    >
+                      {item.status}
+                    </span>
                   </div>
-                  <span
-                    className={`text-[10px] px-3 py-1 rounded-full font-semibold ${
-                      item.status === "Hadir"
-                        ? "bg-emerald-50 text-emerald-600"
-                        : item.status === "Izin"
-                        ? "bg-blue-50 text-blue-600"
-                        : "bg-red-50 text-red-600"
-                    }`}
-                  >
-                    {item.status}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -482,9 +501,10 @@ export default function KaryawanPage() {
                     <button
                       key={cat}
                       type="button"
-                      onClick={() => setFormRole(cat)}
-                      className={`flex-1 py-2 text-xs font-semibold rounded-xl border transition-all ${
-                        formRole === cat
+                      disabled={editingId !== null}
+                      onClick={() => setFormCategory(cat)}
+                      className={`flex-1 py-2 text-xs font-semibold rounded-xl border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                        formCategory === cat
                           ? "bg-[#E52424] text-white border-[#E52424]"
                           : "bg-white text-zinc-500 border-zinc-200"
                       }`}
@@ -494,25 +514,39 @@ export default function KaryawanPage() {
                   ))}
                 </div>
                 <p className="text-[10px] text-zinc-400">
-                  Kategori &quot;Tenant&quot; otomatis dibuatkan akun login kasir.
+                  {editingId !== null
+                    ? "Kategori tidak bisa diubah setelah karyawan dibuat."
+                    : 'Kategori "Tenant" otomatis dibuatkan akun login kasir.'}
                 </p>
               </div>
 
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-zinc-600">No. HP</label>
+                <input
+                  type="tel"
+                  required
+                  value={formPhone}
+                  onChange={(e) => setFormPhone(e.target.value)}
+                  placeholder="08xxxxxxxxxx"
+                  className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 text-sm outline-none focus:border-[#E52424]"
+                />
+              </div>
+
               {/* FIELD TAMBAHAN — CUMA MUNCUL KALAU KATEGORINYA TENANT */}
-              {formRole === "Tenant" && (
+              {formCategory === "Tenant" && (
                 <div className="space-y-4 p-3 bg-zinc-50 rounded-xl border border-zinc-200/60">
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-zinc-600">Penempatan Tenant</label>
                     <select
                       required
-                      value={formTenantId}
-                      onChange={(e) => setFormTenantId(e.target.value ? Number(e.target.value) : "")}
+                      value={formOutletId}
+                      onChange={(e) => setFormOutletId(e.target.value ? Number(e.target.value) : "")}
                       className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 text-sm outline-none focus:border-[#E52424] bg-white"
                     >
                       <option value="">Pilih tenant...</option>
-                      {visibleTenants.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
+                      {outletList.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.outletName}
                         </option>
                       ))}
                     </select>
@@ -537,10 +571,11 @@ export default function KaryawanPage() {
                     )}
                   </div>
 
-                  {editingId === null && (
+                  {editingId === null && formName.trim() && (
                     <p className="text-[10px] text-zinc-500 bg-white border border-zinc-200 rounded-lg p-2">
-                      Password default <span className="font-mono font-semibold">{DEFAULT_KASIR_PASSWORD}</span> akan
-                      dibuatkan otomatis. Kasir wajib menggantinya saat login pertama kali.
+                      Password awal akan sama dengan:{" "}
+                      <span className="font-mono font-semibold">{suggestPassword(formName)}</span>. Kasir wajib
+                      menggantinya saat login pertama kali.
                     </p>
                   )}
                 </div>
@@ -556,9 +591,10 @@ export default function KaryawanPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#E52424] text-white text-xs font-semibold hover:bg-[#D91F1F] transition-all"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 rounded-xl bg-[#E52424] text-white text-xs font-semibold hover:bg-[#D91F1F] transition-all disabled:opacity-60"
                 >
-                  {editingId !== null ? "Simpan Perubahan" : "Tambah"}
+                  {isSubmitting ? "Menyimpan..." : editingId !== null ? "Simpan Perubahan" : "Tambah"}
                 </button>
               </div>
             </form>

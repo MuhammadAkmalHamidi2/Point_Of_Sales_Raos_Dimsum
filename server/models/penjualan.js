@@ -19,7 +19,15 @@ module.exports = (sequelize, DataTypes) => {
       if (UserModel) {
         penjualan.belongsTo(UserModel, {
           foreignKey: 'userId',
-          as: 'kasir' // Menggunakan alias 'kasir' (jangan 'id' karena bentrok dengan Primary Key)
+          as: 'kasir' 
+        });
+      }
+
+      const OutletModel = models.outlet || models.Outlet;
+      if (OutletModel) {
+        penjualan.belongsTo(OutletModel, {
+          foreignKey: 'outletId',
+          as: 'outlet'
         });
       }
     }
@@ -43,6 +51,14 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       references: {
         model: 'users', // Nama tabel user di MySQL
+        key: 'id'
+      }
+    },
+    outletId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'outlets',
         key: 'id'
       }
     },

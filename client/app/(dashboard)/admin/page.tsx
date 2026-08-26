@@ -1,98 +1,82 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { api } from "@/lib/api";
 
 type FilterType = "Harian" | "Mingguan" | "Bulanan" | "Custom";
 
-const dashboardDataMap = {
-  Harian: {
-    label: "Minggu Ini (Senin - Minggu)",
-    totalOmset: "Rp 15.800.000",
-    cashAmount: "Rp 8.690.000",
-    qrisAmount: "Rp 7.110.000",
-    growth: "+8.2%",
-    comparisonText: "dari minggu lalu",
-    xAxisLabel: "Hari",
-    chart: [
-      { label: "Sen", val: 50, amount: "1.2M" },
-      { label: "Sel", val: 65, amount: "1.6M" },
-      { label: "Rab", val: 60, amount: "1.5M" },
-      { label: "Kam", val: 80, amount: "2.0M" },
-      { label: "Jum", val: 90, amount: "2.2M" },
-      { label: "Sab", val: 100, amount: "2.5M" },
-      { label: "Min", val: 95, amount: "2.4M" },
-    ],
-    cashPercent: 55,
-    qrisPercent: 45,
-  },
-  Mingguan: {
-    label: "Bulan Ini (Minggu 1 - Minggu 4)",
-    totalOmset: "Rp 64.200.000",
-    cashAmount: "Rp 32.100.000",
-    qrisAmount: "Rp 32.100.000",
-    growth: "+15.0%",
-    comparisonText: "dari bulan lalu",
-    xAxisLabel: "Minggu",
-    chart: [
-      { label: "Minggu 1", val: 60, amount: "14M" },
-      { label: "Minggu 2", val: 75, amount: "17M" },
-      { label: "Minggu 3", val: 90, amount: "21M" },
-      { label: "Minggu 4", val: 100, amount: "24M" },
-    ],
-    cashPercent: 50,
-    qrisPercent: 50,
-  },
-  Bulanan: {
-    label: "Tahun Ini (Januari - Desember 2026)",
-    totalOmset: "Rp 312.000.000",
-    cashAmount: "Rp 140.400.000",
-    qrisAmount: "Rp 171.600.000",
-    growth: "+22.4%",
-    comparisonText: "dari tahun lalu",
-    xAxisLabel: "Bulan",
-    chart: [
-      { label: "Jan", val: 40, amount: "18M" },
-      { label: "Feb", val: 50, amount: "22M" },
-      { label: "Mar", val: 65, amount: "28M" },
-      { label: "Apr", val: 55, amount: "24M" },
-      { label: "Mei", val: 80, amount: "35M" },
-      { label: "Jun", val: 70, amount: "30M" },
-      { label: "Jul", val: 85, amount: "38M" },
-      { label: "Agu", val: 95, amount: "42M" },
-      { label: "Sep", val: 75, amount: "33M" },
-      { label: "Okt", val: 90, amount: "40M" },
-      { label: "Nov", val: 85, amount: "37M" },
-      { label: "Des", val: 100, amount: "45M" },
-    ],
-    cashPercent: 45,
-    qrisPercent: 55,
-  },
-  Custom: {
-    label: "Rentang Tanggal Custom",
-    totalOmset: "Rp 5.120.000",
-    cashAmount: "Rp 2.560.000",
-    qrisAmount: "Rp 2.560.000",
-    growth: "Custom",
-    comparisonText: "periode terpilih",
-    xAxisLabel: "Tanggal",
-    chart: [
-      { label: "20 Mei", val: 40, amount: "800rb" },
-      { label: "21 Mei", val: 70, amount: "1.4M" },
-      { label: "22 Mei", val: 85, amount: "1.7M" },
-      { label: "23 Mei", val: 60, amount: "1.2M" },
-      { label: "24 Mei", val: 95, amount: "1.9M" },
-    ],
-    cashPercent: 50,
-    qrisPercent: 50,
-  },
+type DashboardData = {
+  filter: FilterType;
+  startDate: string;
+  endDate: string;
+  totalOmset: number;
+  cashAmount: number;
+  qrisAmount: number;
+  cashPercent: number;
+  qrisPercent: number;
+  chart: { label: string; val: number; amount: number }[];
+};
+
+const emptyDashboardData: DashboardData = {
+  filter: "Harian",
+  startDate: "",
+  endDate: "",
+  totalOmset: 0,
+  cashAmount: 0,
+  qrisAmount: 0,
+  cashPercent: 0,
+  qrisPercent: 0,
+  chart: [],
+};
+
+const formatRupiah = (amount: number) =>
+  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(amount);
+
+const getPeriodLabel = (filter: FilterType, data: DashboardData) => {
+  if (filter === "Harian") return "Minggu Ini (Senin - Minggu)";
+  if (filter === "Mingguan") return "Bulan Ini (Minggu 1 - Minggu 4)";
+  if (filter === "Bulanan") return `Tahun Ini (${data.startDate.slice(0, 4)})`;
+  return `${data.startDate} s/d ${data.endDate}`;
 };
 
 export default function DashboardKeuangan() {
   const [filter, setFilter] = useState<FilterType>("Harian");
-  const [customStart, setCustomStart] = useState("2026-05-20");
-  const [customEnd, setCustomEnd] = useState("2026-05-24");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [dashboardData, setDashboardData] = useState<DashboardData>(emptyDashboardData);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const currentData = dashboardDataMap[filter];
+  const fetchDashboard = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setErrorMessage("");
+      const params = new URLSearchParams({ filter });
+      if (filter === "Custom") {
+        if (!customStart || !customEnd) return;
+        params.set("start", customStart);
+        params.set("end", customEnd);
+      }
+
+      const response = await api.get<{ data: DashboardData }>(`/api/dashboard?${params.toString()}`);
+      setDashboardData(response.data.data);
+    } catch (error) {
+      console.error("Gagal mengambil data dashboard:", error);
+      setErrorMessage("Gagal memuat data dashboard.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [customEnd, customStart, filter]);
+
+  useEffect(() => {
+    const loadDashboard = async () => {
+      await fetchDashboard();
+    };
+
+    void loadDashboard();
+  }, [fetchDashboard]);
+
+  const currentData = dashboardData;
 
   return (
     <div className="space-y-6">
@@ -102,7 +86,7 @@ export default function DashboardKeuangan() {
           <div>
             <h1 className="text-base md:text-xl font-bold text-[#212121]">Dashboard Keuangan</h1>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Menampilkan data: <span className="font-semibold text-zinc-700">{currentData.label}</span>
+              Menampilkan data: <span className="font-semibold text-zinc-700">{getPeriodLabel(filter, currentData)}</span>
             </p>
           </div>
 
@@ -141,7 +125,10 @@ export default function DashboardKeuangan() {
             />
           </div>
         )}
+        {errorMessage && <p className="text-xs text-red-500">{errorMessage}</p>}
       </div>
+
+      {isLoading && <p className="text-xs text-zinc-400 text-center">Memuat data dashboard...</p>}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         
@@ -149,14 +136,14 @@ export default function DashboardKeuangan() {
         <div className="md:col-span-1 bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs flex flex-col justify-between space-y-4">
           <div>
             <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Total Omset</span>
-            <h2 className="text-3xl font-extrabold text-[#212121] mt-1">{currentData.totalOmset}</h2>
+            <h2 className="text-3xl font-extrabold text-[#212121] mt-1">{formatRupiah(currentData.totalOmset)}</h2>
             
             <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-[#43A047] text-xs font-semibold">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
               </svg>
-              <span>{currentData.growth}</span>
-              <span className="text-zinc-400 font-normal ml-0.5">{currentData.comparisonText}</span>
+              <span>Data aktual</span>
+              <span className="text-zinc-400 font-normal ml-0.5">sesuai periode</span>
             </div>
           </div>
 
@@ -168,7 +155,7 @@ export default function DashboardKeuangan() {
                 <span className="w-2.5 h-2.5 rounded-full bg-[#1E88E5]"></span>
                 <span className="text-xs font-semibold text-zinc-600">Cash</span>
               </div>
-              <span className="text-xs font-bold text-[#212121]">{currentData.cashAmount}</span>
+              <span className="text-xs font-bold text-[#212121]">{formatRupiah(currentData.cashAmount)}</span>
             </div>
 
             <div className="flex justify-between items-center bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
@@ -176,7 +163,7 @@ export default function DashboardKeuangan() {
                 <span className="w-2.5 h-2.5 rounded-full bg-[#E52424]"></span>
                 <span className="text-xs font-semibold text-zinc-600">QRIS</span>
               </div>
-              <span className="text-xs font-bold text-[#212121]">{currentData.qrisAmount}</span>
+              <span className="text-xs font-bold text-[#212121]">{formatRupiah(currentData.qrisAmount)}</span>
             </div>
           </div>
         </div>
@@ -225,7 +212,7 @@ export default function DashboardKeuangan() {
                 {currentData.chart.map((item, idx) => (
                   <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative z-10">
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-7 bg-zinc-900 text-white text-[10px] py-1 px-2 rounded shadow-md pointer-events-none z-20 font-bold whitespace-nowrap">
-                      {item.amount}
+                      {formatRupiah(item.amount)}
                     </div>
 
                     <div className="w-full max-w-[28px] bg-zinc-100/80 rounded-t-lg h-full flex items-end overflow-hidden">
@@ -249,7 +236,7 @@ export default function DashboardKeuangan() {
                 ))}
               </div>
               <p className="text-center text-[11px] font-bold text-zinc-400 uppercase tracking-wider mt-2.5">
-                {currentData.xAxisLabel}
+                {filter === "Harian" ? "Hari" : filter === "Mingguan" ? "Minggu" : filter === "Bulanan" ? "Bulan" : "Tanggal"}
               </p>
             </div>
           </div>

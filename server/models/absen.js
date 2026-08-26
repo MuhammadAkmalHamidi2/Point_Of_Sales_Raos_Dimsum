@@ -4,7 +4,6 @@ const { Model } = require("sequelize");
 module.exports = (sequelize, DataTypes) => {
   class Absen extends Model {
     static associate(models) {
-      // Relasi: Absen milik satu User
       Absen.belongsTo(models.User, {
         foreignKey: "userId",
         as: "user",
@@ -17,7 +16,7 @@ module.exports = (sequelize, DataTypes) => {
   Absen.init(
     {
       userId: {
-        type: DataTypes.INTEGER, // Ubah ke DataTypes.UUID jika ID User menggunakan UUID
+        type: DataTypes.INTEGER,
         allowNull: false,
         references: {
           model: "Users",
@@ -27,12 +26,12 @@ module.exports = (sequelize, DataTypes) => {
       foto: {
         type: DataTypes.STRING,
         allowNull: false,
-      }
+      },
     },
     {
       sequelize,
       modelName: "Absen",
-      tableName: "Absens", // Nama tabel di database
+      tableName: "Absens",
     }
   );
 

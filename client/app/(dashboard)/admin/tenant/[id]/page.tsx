@@ -1,128 +1,295 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { api } from "@/lib/api";
 
 type FilterType = "Hari Ini" | "Mingguan" | "Bulanan" | "Custom";
 
-const tenantMasterData = {
-  1: {
-    name: "Raos Dimsum - Outlet BSD",
-    contact: "081234567890",
-    status: "Aktif",
-    karyawan: [
-      { id: 1, name: "Bud Santoso", role: "Kasir", status: "Aktif" },
-      { id: 2, name: "Siti Aminah", role: "Kasir", status: "Aktif" },
-    ],
-  },
-  2: {
-    name: "Raos Dimsum - Outlet Gading",
-    contact: "081298765432",
-    status: "Aktif",
-    karyawan: [
-      { id: 3, name: "Ahmad Fauzi", role: "Kasir", status: "Izin" },
-    ],
-  },
-  3: {
-    name: "Raos Dimsum - Outlet Kelapa Gading",
-    contact: "081211112222",
-    status: "Nonaktif",
-    karyawan: [],
-  },
+type Tenant = {
+  outletName: string;
+  address: string | null;
+  status: boolean;
+  karyawans: {
+    id: number;
+    name: string;
+    category: string;
+    phone: string | null;
+  }[];
 };
 
-const dashboardDataMap = {
-  "Hari Ini": {
-    label: "Hari Ini",
-    totalOmset: "Rp 850.000",
-    cashAmount: "Rp 470.000",
-    qrisAmount: "Rp 380.000",
-    growth: "+3.1%",
-    comparisonText: "dari kemarin",
-    xAxisLabel: "Jam",
-    chart: [
-      { label: "08:00", val: 30, amount: "80rb" },
-      { label: "10:00", val: 55, amount: "150rb" },
-      { label: "12:00", val: 100, amount: "280rb" },
-      { label: "14:00", val: 70, amount: "190rb" },
-      { label: "16:00", val: 60, amount: "160rb" },
-      { label: "18:00", val: 90, amount: "240rb" },
-    ],
-    cashPercent: 55,
-    qrisPercent: 45,
-  },
-  Mingguan: {
-    label: "Bulan Ini (Minggu 1 - Minggu 4)",
-    totalOmset: "Rp 19.200.000",
-    cashAmount: "Rp 9.600.000",
-    qrisAmount: "Rp 9.600.000",
-    growth: "+10.0%",
-    comparisonText: "dari bulan lalu",
-    xAxisLabel: "Minggu",
-    chart: [
-      { label: "Minggu 1", val: 60, amount: "4M" },
-      { label: "Minggu 2", val: 75, amount: "5M" },
-      { label: "Minggu 3", val: 90, amount: "6M" },
-      { label: "Minggu 4", val: 100, amount: "7M" },
-    ],
-    cashPercent: 50,
-    qrisPercent: 50,
-  },
-  Bulanan: {
-    label: "Tahun Ini (Januari - Desember 2026)",
-    totalOmset: "Rp 96.000.000",
-    cashAmount: "Rp 43.200.000",
-    qrisAmount: "Rp 52.800.000",
-    growth: "+18.4%",
-    comparisonText: "dari tahun lalu",
-    xAxisLabel: "Bulan",
-    chart: [
-      { label: "Jan", val: 40, amount: "6M" },
-      { label: "Feb", val: 50, amount: "7M" },
-      { label: "Mar", val: 65, amount: "9M" },
-      { label: "Apr", val: 55, amount: "8M" },
-      { label: "Mei", val: 80, amount: "11M" },
-      { label: "Jun", val: 70, amount: "10M" },
-      { label: "Jul", val: 85, amount: "12M" },
-      { label: "Agu", val: 95, amount: "13M" },
-      { label: "Sep", val: 75, amount: "10M" },
-      { label: "Okt", val: 90, amount: "12M" },
-      { label: "Nov", val: 85, amount: "11M" },
-      { label: "Des", val: 100, amount: "14M" },
-    ],
-    cashPercent: 45,
-    qrisPercent: 55,
-  },
-  Custom: {
-    label: "Rentang Tanggal Custom",
-    totalOmset: "Rp 2.120.000",
-    cashAmount: "Rp 1.060.000",
-    qrisAmount: "Rp 1.060.000",
-    growth: "Custom",
-    comparisonText: "periode terpilih",
-    xAxisLabel: "Tanggal",
-    chart: [
-      { label: "20 Mei", val: 40, amount: "300rb" },
-      { label: "21 Mei", val: 70, amount: "550rb" },
-      { label: "22 Mei", val: 85, amount: "650rb" },
-      { label: "23 Mei", val: 60, amount: "450rb" },
-      { label: "24 Mei", val: 95, amount: "700rb" },
-    ],
-    cashPercent: 50,
-    qrisPercent: 50,
-  },
+type Transaksi = {
+  id: number;
+  invoice: string;
+  namaProduk: string;
+  pcs: number;
+  subtotal: number;
+  totalBayar: number;
+  metodePembayaran: string;
+  createdAt: string;
+  kasir: { id: number; username: string } | null;
 };
+
+function getComparisonRange(filter: FilterType, startValue: string, endValue: string) {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+
+  if (filter === "Hari Ini") {
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    return { start: yesterdayStart, end: new Date(todayStart.getTime() - 1), label: "kemarin" };
+  }
+
+  if (filter === "Mingguan") {
+    const currentWeekStart = new Date(todayStart);
+    currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay());
+    const previousWeekStart = new Date(currentWeekStart);
+    previousWeekStart.setDate(previousWeekStart.getDate() - 7);
+    return {
+      start: previousWeekStart,
+      end: new Date(currentWeekStart.getTime() - 1),
+      label: "minggu kemarin",
+    };
+  }
+
+  if (filter === "Bulanan") {
+    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    return {
+      start: previousMonthStart,
+      end: new Date(currentMonthStart.getTime() - 1),
+      label: "bulan kemarin",
+    };
+  }
+
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+  return null;
+}
+
+function sumTransactions(transactions: Transaksi[], start: Date, end: Date) {
+  return transactions.reduce((total, transaction) => {
+    const date = new Date(transaction.createdAt);
+    return date >= start && date <= end ? total + transaction.totalBayar : total;
+  }, 0);
+}
 
 export default function TenantDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = Number(params.id);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [transaksiList, setTransaksiList] = useState<Transaksi[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("Hari Ini");
   const [customStart, setCustomStart] = useState("2026-05-20");
   const [customEnd, setCustomEnd] = useState("2026-05-24");
 
-  const tenant = tenantMasterData[id as keyof typeof tenantMasterData];
-  const currentData = dashboardDataMap[filter];
+  useEffect(() => {
+    const fetchTenant = async () => {
+      try {
+        const response = await api.get<{ data?: Tenant }>(`/api/outlets/${id}`);
+        setTenant(response.data.data ?? null);
+      } catch (error) {
+        console.error("Gagal mengambil detail tenant:", error);
+        setTenant(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    const fetchTransaksi = async () => {
+      try {
+        const response = await api.get<{ data?: Transaksi[] }>(
+          `/api/penjualan/outlet/${id}`
+        );
+        setTransaksiList(response.data.data ?? []);
+      } catch (error) {
+        console.error("Gagal mengambil riwayat transaksi:", error);
+        setTransaksiList([]);
+      }
+    };
+
+    const loadData = async () => {
+      if (Number.isInteger(id)) {
+        await Promise.all([fetchTenant(), fetchTransaksi()]);
+      }
+    };
+
+    void loadData();
+  }, [id]);
+
+  // Helper Hapus Transaksi Duplikat berdasarkan Invoice
+  const uniqueTransaksi = useMemo(() => {
+    const map = new Map<string, Transaksi>();
+    transaksiList.forEach((trx) => {
+      if (!map.has(trx.invoice)) {
+        map.set(trx.invoice, trx);
+      }
+    });
+    return Array.from(map.values());
+  }, [transaksiList]);
+
+  // 1. Filter transaksi berdasarkan tanggal & waktu
+  const filteredTransaksi = useMemo(() => {
+    const now = new Date();
+
+    return uniqueTransaksi.filter((trx) => {
+      const trxDate = new Date(trx.createdAt);
+
+      if (filter === "Hari Ini") {
+        return trxDate.toDateString() === now.toDateString();
+      }
+
+      if (filter === "Mingguan") {
+        const firstDayOfWeek = new Date(now);
+        firstDayOfWeek.setDate(now.getDate() - now.getDay());
+        firstDayOfWeek.setHours(0, 0, 0, 0);
+        return trxDate >= firstDayOfWeek;
+      }
+
+      if (filter === "Bulanan") {
+        return (
+          trxDate.getMonth() === now.getMonth() &&
+          trxDate.getFullYear() === now.getFullYear()
+        );
+      }
+
+      if (filter === "Custom") {
+        const start = new Date(customStart);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(customEnd);
+        end.setHours(23, 59, 59, 999);
+        return trxDate >= start && trxDate <= end;
+      }
+
+      return true;
+    });
+  }, [uniqueTransaksi, filter, customStart, customEnd]);
+
+  // 2. Kalkulasi Total Omset & Rincian Pembayaran Backend
+  const { totalOmset, cashOmset, qrisOmset, cashPercent, qrisPercent } =
+    useMemo(() => {
+      const total = filteredTransaksi.reduce(
+        (sum, trx) => sum + trx.totalBayar,
+        0
+      );
+      const cash = filteredTransaksi
+        .filter((trx) => trx.metodePembayaran?.toLowerCase() === "cash")
+        .reduce((sum, trx) => sum + trx.totalBayar, 0);
+      const qris = filteredTransaksi
+        .filter((trx) => trx.metodePembayaran?.toLowerCase() === "qris")
+        .reduce((sum, trx) => sum + trx.totalBayar, 0);
+
+      const cPercent = total > 0 ? Math.round((cash / total) * 100) : 0;
+      const qPercent = total > 0 ? 100 - cPercent : 0;
+
+      return {
+        totalOmset: total,
+        cashOmset: cash,
+        qrisOmset: qris,
+        cashPercent: cPercent,
+        qrisPercent: qPercent,
+      };
+    }, [filteredTransaksi]);
+
+  const comparison = useMemo(() => {
+    const range = getComparisonRange(filter, customStart, customEnd);
+    if (!range) return null;
+
+    const previousOmset = sumTransactions(uniqueTransaksi, range.start, range.end);
+    if (previousOmset === 0) {
+      return { percent: null, label: range.label };
+    }
+
+    return {
+      percent: Math.round(((totalOmset - previousOmset) / previousOmset) * 100),
+      label: range.label,
+    };
+  }, [customEnd, customStart, filter, totalOmset, uniqueTransaksi]);
+
+  // 3. Generate Data Grafik Dinamis Berdasarkan Filter
+  const { chartData, xAxisLabel } = useMemo(() => {
+    let groups: { label: string; amount: number }[] = [];
+    let xLabel = "";
+
+    if (filter === "Hari Ini") {
+      xLabel = "Jam";
+      const hours = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00"];
+      groups = hours.map((h) => ({ label: h, amount: 0 }));
+
+      filteredTransaksi.forEach((trx) => {
+        const hour = new Date(trx.createdAt).getHours();
+        let index = Math.floor((hour - 8) / 2);
+        if (index < 0) index = 0;
+        if (index >= groups.length) index = groups.length - 1;
+        groups[index].amount += trx.totalBayar;
+      });
+    } else if (filter === "Mingguan") {
+      xLabel = "Hari";
+      const days = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
+      groups = days.map((d) => ({ label: d, amount: 0 }));
+
+      filteredTransaksi.forEach((trx) => {
+        const dayIdx = (new Date(trx.createdAt).getDay() + 6) % 7;
+        groups[dayIdx].amount += trx.totalBayar;
+      });
+    } else if (filter === "Bulanan") {
+      xLabel = "Bulan";
+      const months = [
+        "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+        "Jul", "Agu", "Sep", "Okt", "Nov", "Des",
+      ];
+      groups = months.map((m) => ({ label: m, amount: 0 }));
+
+      filteredTransaksi.forEach((trx) => {
+        const mIdx = new Date(trx.createdAt).getMonth();
+        groups[mIdx].amount += trx.totalBayar;
+      });
+    } else {
+      xLabel = "Tanggal";
+      const mapDates = new Map<string, number>();
+      filteredTransaksi.forEach((trx) => {
+        const dStr = new Date(trx.createdAt).toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "short",
+        });
+        mapDates.set(dStr, (mapDates.get(dStr) || 0) + trx.totalBayar);
+      });
+
+      groups = Array.from(mapDates.entries()).map(([label, amount]) => ({
+        label,
+        amount,
+      }));
+
+      if (groups.length === 0) {
+        groups = [{ label: "-", amount: 0 }];
+      }
+    }
+
+    const maxAmount = Math.max(...groups.map((g) => g.amount), 1);
+
+    const formattedChart = groups.map((g) => ({
+      label: g.label,
+      val: Math.round((g.amount / maxAmount) * 100),
+      amountFormatted:
+        g.amount >= 1000000
+          ? `${(g.amount / 1000000).toFixed(1)}M`
+          : g.amount >= 1000
+          ? `${Math.round(g.amount / 1000)}rb`
+          : `Rp ${g.amount}`,
+    }));
+
+    return { chartData: formattedChart, xAxisLabel: xLabel };
+  }, [filteredTransaksi, filter]);
+
+  if (isLoading) {
+    return <p className="text-sm text-zinc-500">Memuat detail tenant...</p>;
+  }
 
   if (!tenant) {
     return <p className="text-sm text-zinc-500">Tenant tidak ditemukan.</p>;
@@ -141,22 +308,26 @@ export default function TenantDetailPage() {
               ←
             </button>
             <div>
-              <h1 className="text-base md:text-xl font-bold text-[#212121]">{tenant.name}</h1>
+              <h1 className="text-base md:text-xl font-bold text-[#212121]">
+                {tenant.outletName}
+              </h1>
               <p className="text-xs text-zinc-400 mt-0.5">
-                {tenant.contact} ·{" "}
+                {tenant.address ?? "Alamat belum diisi"} ·{" "}
                 <span
                   className={`font-semibold ${
-                    tenant.status === "Aktif" ? "text-green-600" : "text-zinc-500"
+                    tenant.status ? "text-green-600" : "text-zinc-500"
                   }`}
                 >
-                  {tenant.status}
+                  {tenant.status ? "Aktif" : "Nonaktif"}
                 </span>
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap bg-[#F5F6F8] p-1 rounded-xl border border-zinc-200/60 gap-1">
-            {(["Hari Ini", "Mingguan", "Bulanan", "Custom"] as FilterType[]).map((tab) => (
+            {(
+              ["Hari Ini", "Mingguan", "Bulanan", "Custom"] as FilterType[]
+            ).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setFilter(tab)}
@@ -174,7 +345,9 @@ export default function TenantDetailPage() {
 
         {filter === "Custom" && (
           <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-zinc-100 text-xs">
-            <span className="font-semibold text-zinc-600">Pilih Rentang Tanggal:</span>
+            <span className="font-semibold text-zinc-600">
+              Pilih Rentang Tanggal:
+            </span>
             <input
               type="date"
               value={customStart}
@@ -196,35 +369,62 @@ export default function TenantDetailPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="md:col-span-1 bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs flex flex-col justify-between space-y-4">
           <div>
-            <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Total Omset</span>
-            <h2 className="text-3xl font-extrabold text-[#212121] mt-1">{currentData.totalOmset}</h2>
-
-            <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-[#43A047] text-xs font-semibold">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-              </svg>
-              <span>{currentData.growth}</span>
-              <span className="text-zinc-400 font-normal ml-0.5">{currentData.comparisonText}</span>
-            </div>
+            <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+              Total Omset ({filter})
+            </span>
+            <h2 className="text-3xl font-extrabold text-[#212121] mt-1">
+              Rp {totalOmset.toLocaleString("id-ID")}
+            </h2>
+            {comparison && (
+              <div
+                className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                  comparison.percent === null
+                    ? "bg-zinc-100 text-zinc-500"
+                    : comparison.percent >= 0
+                    ? "bg-emerald-50 text-emerald-600"
+                    : "bg-red-50 text-red-600"
+                }`}
+              >
+                {comparison.percent === null ? (
+                  <span>Belum ada data {comparison.label}</span>
+                ) : (
+                  <>
+                    <span>{comparison.percent >= 0 ? "↑" : "↓"}</span>
+                    <span>{Math.abs(comparison.percent)}%</span>
+                    <span className="text-zinc-400 font-normal">dari {comparison.label}</span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="pt-4 border-t border-zinc-100 space-y-2.5">
-            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Rincian Pembayaran</span>
+            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+              Rincian Pembayaran
+            </span>
 
             <div className="flex justify-between items-center bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#1E88E5]"></span>
-                <span className="text-xs font-semibold text-zinc-600">Cash</span>
+                <span className="text-xs font-semibold text-zinc-600">
+                  Cash
+                </span>
               </div>
-              <span className="text-xs font-bold text-[#212121]">{currentData.cashAmount}</span>
+              <span className="text-xs font-bold text-[#212121]">
+                Rp {cashOmset.toLocaleString("id-ID")}
+              </span>
             </div>
 
             <div className="flex justify-between items-center bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#E52424]"></span>
-                <span className="text-xs font-semibold text-zinc-600">QRIS</span>
+                <span className="text-xs font-semibold text-zinc-600">
+                  QRIS
+                </span>
               </div>
-              <span className="text-xs font-bold text-[#212121]">{currentData.qrisAmount}</span>
+              <span className="text-xs font-bold text-[#212121]">
+                Rp {qrisOmset.toLocaleString("id-ID")}
+              </span>
             </div>
           </div>
         </div>
@@ -232,8 +432,12 @@ export default function TenantDetailPage() {
         <div className="md:col-span-2 bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4 flex flex-col justify-between">
           <div className="flex justify-between items-center">
             <div>
-              <p className="text-sm font-bold text-[#212121]">Grafik Pertumbuhan Omset</p>
-              <p className="text-[11px] text-zinc-400">Visualisasi tren penjualan tenant ini</p>
+              <p className="text-sm font-bold text-[#212121]">
+                Grafik Pertumbuhan Omset
+              </p>
+              <p className="text-[11px] text-zinc-400">
+                Visualisasi tren penjualan tenant ini ({filter})
+              </p>
             </div>
             <div className="flex items-center gap-1.5 text-xs">
               <span className="w-2.5 h-2.5 rounded-full bg-[#E52424]"></span>
@@ -265,10 +469,13 @@ export default function TenantDetailPage() {
                   <div></div>
                 </div>
 
-                {currentData.chart.map((item, idx) => (
-                  <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative z-10">
+                {chartData.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="flex-1 flex flex-col items-center h-full justify-end group relative z-10"
+                  >
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-7 bg-zinc-900 text-white text-[10px] py-1 px-2 rounded shadow-md pointer-events-none z-20 font-bold whitespace-nowrap">
-                      {item.amount}
+                      {item.amountFormatted}
                     </div>
 
                     <div className="w-full max-w-[28px] bg-zinc-100/80 rounded-t-lg h-full flex items-end overflow-hidden">
@@ -284,42 +491,62 @@ export default function TenantDetailPage() {
 
             <div className="pl-[52px] pt-2">
               <div className="flex justify-between gap-2">
-                {currentData.chart.map((item, idx) => (
-                  <span key={idx} className="flex-1 text-center text-[10px] font-semibold text-zinc-500 truncate">
+                {chartData.map((item, idx) => (
+                  <span
+                    key={idx}
+                    className="flex-1 text-center text-[10px] font-semibold text-zinc-500 truncate"
+                  >
                     {item.label}
                   </span>
                 ))}
               </div>
               <p className="text-center text-[11px] font-bold text-zinc-400 uppercase tracking-wider mt-2.5">
-                {currentData.xAxisLabel}
+                {xAxisLabel}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* PERSENTASE PEMBAYARAN (kiri) + DATA KARYAWAN (kanan) */}
+      {/* PERSENTASE PEMBAYARAN + DATA KARYAWAN */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
-          <p className="text-sm font-bold text-[#212121]">Persentase Metode Pembayaran</p>
+          <p className="text-sm font-bold text-[#212121]">
+            Persentase Metode Pembayaran
+          </p>
 
           <div className="flex items-center justify-between">
             <div className="relative w-28 h-28 flex items-center justify-center">
               <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
-                <circle cx="18" cy="18" r="15.915" fill="none" stroke="#F5F6F8" strokeWidth="3.8" />
                 <circle
-                  cx="18" cy="18" r="15.915" fill="none"
-                  stroke="#1E88E5" strokeWidth="3.8"
-                  strokeDasharray={`${currentData.cashPercent} ${100 - currentData.cashPercent}`}
+                  cx="18"
+                  cy="18"
+                  r="15.915"
+                  fill="none"
+                  stroke="#F5F6F8"
+                  strokeWidth="3.8"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="15.915"
+                  fill="none"
+                  stroke="#1E88E5"
+                  strokeWidth="3.8"
+                  strokeDasharray={`${cashPercent} ${100 - cashPercent}`}
                   strokeDashoffset="0"
                   strokeLinecap="round"
                   className="transition-all duration-500"
                 />
                 <circle
-                  cx="18" cy="18" r="15.915" fill="none"
-                  stroke="#E52424" strokeWidth="3.8"
-                  strokeDasharray={`${currentData.qrisPercent} ${100 - currentData.qrisPercent}`}
-                  strokeDashoffset={`-${currentData.cashPercent}`}
+                  cx="18"
+                  cy="18"
+                  r="15.915"
+                  fill="none"
+                  stroke="#E52424"
+                  strokeWidth="3.8"
+                  strokeDasharray={`${qrisPercent} ${100 - qrisPercent}`}
+                  strokeDashoffset={`-${cashPercent}`}
                   strokeLinecap="round"
                   className="transition-all duration-500"
                 />
@@ -334,16 +561,24 @@ export default function TenantDetailPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-3 h-3 rounded-full bg-[#1E88E5]"></span>
-                  <span className="font-semibold text-zinc-600 text-xs">Cash</span>
+                  <span className="font-semibold text-zinc-600 text-xs">
+                    Cash
+                  </span>
                 </div>
-                <span className="font-bold text-[#212121] text-xs">{currentData.cashPercent}%</span>
+                <span className="font-bold text-[#212121] text-xs">
+                  {cashPercent}%
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-3 h-3 rounded-full bg-[#E52424]"></span>
-                  <span className="font-semibold text-zinc-600 text-xs">QRIS</span>
+                  <span className="font-semibold text-zinc-600 text-xs">
+                    QRIS
+                  </span>
                 </div>
-                <span className="font-bold text-[#212121] text-xs">{currentData.qrisPercent}%</span>
+                <span className="font-bold text-[#212121] text-xs">
+                  {qrisPercent}%
+                </span>
               </div>
             </div>
           </div>
@@ -352,32 +587,40 @@ export default function TenantDetailPage() {
         <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
           <div className="flex justify-between items-center">
             <div>
-              <h2 className="text-sm font-bold text-[#212121]">Data Karyawan</h2>
-              <p className="text-[11px] text-zinc-400 mt-0.5">Karyawan yang bertugas di tenant ini</p>
+              <h2 className="text-sm font-bold text-[#212121]">
+                Data Karyawan
+              </h2>
+              <p className="text-[11px] text-zinc-400 mt-0.5">
+                Karyawan yang bertugas di tenant ini
+              </p>
             </div>
             <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-500">
-              {tenant.karyawan.length} orang
+              {tenant.karyawans.length} orang
             </span>
           </div>
 
-          {tenant.karyawan.length === 0 ? (
-            <p className="text-xs text-zinc-400 py-4 text-center">Belum ada karyawan terdaftar di tenant ini.</p>
+          {tenant.karyawans.length === 0 ? (
+            <p className="text-xs text-zinc-400 py-4 text-center">
+              Belum ada karyawan terdaftar di tenant ini.
+            </p>
           ) : (
             <div className="divide-y divide-zinc-100">
-              {tenant.karyawan.map((emp) => (
-                <div key={emp.id} className="py-3 flex justify-between items-center">
+              {tenant.karyawans.map((emp) => (
+                <div
+                  key={emp.id}
+                  className="py-3 flex justify-between items-center"
+                >
                   <div>
-                    <p className="text-xs font-bold text-[#212121]">{emp.name}</p>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">{emp.role}</p>
+                    <p className="text-xs font-bold text-[#212121]">
+                      {emp.name}
+                    </p>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      {emp.category}
+                      {emp.phone && <span> · {emp.phone}</span>}
+                    </p>
                   </div>
-                  <span
-                    className={`text-[11px] font-bold px-2.5 py-1 rounded-lg ${
-                      emp.status === "Aktif"
-                        ? "bg-green-50 text-green-600"
-                        : "bg-amber-50 text-amber-600"
-                    }`}
-                  >
-                    {emp.status}
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-green-50 text-green-600">
+                    Aktif
                   </span>
                 </div>
               ))}

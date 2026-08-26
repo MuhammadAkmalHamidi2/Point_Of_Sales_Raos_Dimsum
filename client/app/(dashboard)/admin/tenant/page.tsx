@@ -1,36 +1,23 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import Link from "next/link";
-
-// ==== SIMULASI USER YANG LOGIN (nanti diganti baca dari localStorage) ====
-// role: "master" -> pemilik brand, lihat SEMUA tenant, dikelompokkan per owner
-// role: "admin"  -> akun milik Owner A/B, lihat tenant miliknya sendiri saja
-const currentUser = {
-  id: 10, // ganti angka ini untuk simulasi admin/owner yang beda (misal jadi 20)
-  role: "admin" as "master" | "admin", // ganti ke "master" untuk simulasi akun pemilik brand
-};
+import { api } from "@/lib/api";
 
 type Tenant = {
   id: number;
-  name: string;
-  contact: string;
-  status: "Aktif" | "Nonaktif";
-  ownerId: number;
-  ownerName: string;
+  outletName: string;
+  address: string | null;
+  status: boolean;
+  userId: number | null;
+  user?: { username: string } | null;
+  karyawans: { id: number; name: string; phone: string | null }[];
 };
-
-const ownerOptions = [
-  { id: 10, name: "Owner A - Budi" },
-  { id: 20, name: "Owner B - Rina" },
-];
-
-const initialTenants: Tenant[] = [
-  { id: 1, name: "Raos Dimsum - DU", contact: "081234567890", status: "Aktif", ownerId: 10, ownerName: "Owner A - Budi" },
-  { id: 2, name: "Raos Dimsum - Dago", contact: "081298765432", status: "Aktif", ownerId: 10, ownerName: "Owner A - Budi" },
-  { id: 3, name: "Raos Dimsum - Unpas", contact: "081211112222", status: "Aktif", ownerId: 20, ownerName: "Owner B - Rina" },
-  { id: 4, name: "Raos Dimsum - UPI", contact: "081233334444", status: "Nonaktif", ownerId: 20, ownerName: "Owner B - Rina" },
-];
+function getTenantPhoneLabel(tenant: Tenant) {
+  const phones = tenant.karyawans.map((employee) => employee.phone).filter(Boolean);
+  if (phones.length === 0) return "Belum ada karyawan jaga";
+  return phones.join(" - ");
+}
 
 function TenantRow({
   tenant,
@@ -47,16 +34,16 @@ function TenantRow({
       className="py-3.5 flex justify-between items-center hover:bg-zinc-50 -mx-5 px-5 transition-all"
     >
       <div>
-        <p className="text-xs font-bold text-[#212121]">{tenant.name}</p>
-        <p className="text-[11px] text-zinc-400 mt-0.5">{tenant.contact}</p>
+        <p className="text-xs font-bold text-[#212121]">{tenant.outletName}</p>
+      <p className="text-[11px] text-zinc-400 mt-0.5">{getTenantPhoneLabel(tenant)}</p>
       </div>
       <div className="flex items-center gap-2">
         <span
           className={`text-[11px] font-bold px-2.5 py-1 rounded-lg ${
-            tenant.status === "Aktif" ? "bg-green-50 text-green-600" : "bg-zinc-100 text-zinc-500"
+            tenant.status ? "bg-green-50 text-green-600" : "bg-zinc-100 text-zinc-500"
           }`}
         >
-          {tenant.status}
+          {tenant.status ? "Aktif" : "Nonaktif"}
         </span>
         <button
           onClick={(e) => onEdit(tenant, e)}
@@ -82,42 +69,51 @@ function TenantRow({
 }
 
 export default function TenantPage() {
-  const [tenants, setTenants] = useState<Tenant[]>(initialTenants);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formName, setFormName] = useState("");
-  const [formContact, setFormContact] = useState("");
-  const [formOwnerId, setFormOwnerId] = useState<number>(ownerOptions[0].id);
+  const [formAddress, setFormAddress] = useState("");
+  const [formStatus, setFormStatus] = useState(true);
 
-  // INTI FITUR "tampil tenant by owner"
-  // master -> lihat semua. admin -> cuma tenant yang ownerId-nya sama dengan id dia sendiri
-  const visibleTenants =
-    currentUser.role === "master"
-      ? tenants
-      : tenants.filter((t) => t.ownerId === currentUser.id);
+  const fetchTenants = async () => {
+    try {
+      setIsLoading(true);
+      const response = await api.get<{ data?: Tenant[] }>("/api/outlets");
+      setTenants(response.data.data ?? []);
+      setErrorMessage("");
+    } catch (error) {
+      console.error("Gagal mengambil data tenant:", error);
+      setErrorMessage("Gagal mengambil data tenant.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  // Khusus role master: kelompokkan tenant per owner untuk ditampilkan dengan sub judul
-  const groupedByOwner = ownerOptions
-    .map((owner) => ({
-      owner,
-      tenants: visibleTenants.filter((t) => t.ownerId === owner.id),
-    }))
-    .filter((group) => group.tenants.length > 0);
+  useEffect(() => {
+    const loadTenants = async () => {
+      await fetchTenants();
+    };
+
+    void loadTenants();
+  }, []);
 
   const openAddForm = () => {
     setEditingId(null);
     setFormName("");
-    setFormContact("");
-    setFormOwnerId(currentUser.role === "admin" ? currentUser.id : ownerOptions[0].id);
+    setFormAddress("");
+    setFormStatus(true);
     setIsFormOpen(true);
   };
 
   const openEditForm = (tenant: Tenant) => {
     setEditingId(tenant.id);
-    setFormName(tenant.name);
-    setFormContact(tenant.contact);
-    setFormOwnerId(tenant.ownerId);
+    setFormName(tenant.outletName);
+    setFormAddress(tenant.address ?? "");
+    setFormStatus(tenant.status);
     setIsFormOpen(true);
   };
 
@@ -126,42 +122,35 @@ export default function TenantPage() {
     setEditingId(null);
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const owner = ownerOptions.find((o) => o.id === formOwnerId);
-
-    if (editingId !== null) {
-      setTenants((prev) =>
-        prev.map((t) =>
-          t.id === editingId
-            ? { ...t, name: formName, contact: formContact, ownerId: formOwnerId, ownerName: owner?.name || "" }
-            : t
-        )
-      );
-    } else {
-      const newId = Math.max(0, ...tenants.map((t) => t.id)) + 1;
-      setTenants((prev) => [
-        ...prev,
-        {
-          id: newId,
-          name: formName,
-          contact: formContact,
-          status: "Aktif",
-          ownerId: formOwnerId,
-          ownerName: owner?.name || "",
-        },
-      ]);
+    try {
+      const payload = { outletName: formName.trim(), address: formAddress.trim(), status: formStatus };
+      if (editingId !== null) {
+        await api.put(`/api/outlets/${editingId}`, payload);
+      } else {
+        await api.post("/api/outlets", payload);
+      }
+      await fetchTenants();
+      closeForm();
+    } catch (error) {
+      console.error("Gagal menyimpan tenant:", error);
+      alert("Gagal menyimpan tenant.");
     }
-
-    closeForm();
   };
 
-  const handleDelete = (id: number, event: React.MouseEvent) => {
+  const handleDelete = async (id: number, event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
     const confirmed = confirm("Yakin ingin menghapus tenant ini?");
     if (!confirmed) return;
-    setTenants((prev) => prev.filter((t) => t.id !== id));
+    try {
+      await api.delete(`/api/outlets/${id}`);
+      await fetchTenants();
+    } catch (error) {
+      console.error("Gagal menghapus tenant:", error);
+      alert("Gagal menghapus tenant.");
+    }
   };
 
   const handleEditClick = (tenant: Tenant, event: React.MouseEvent) => {
@@ -175,11 +164,7 @@ export default function TenantPage() {
       <div className="bg-white p-4 md:p-5 rounded-2xl border border-zinc-200/80 flex justify-between items-center shadow-2xs">
         <div>
           <h1 className="text-base md:text-xl font-bold text-[#212121]">Kelola Tenant</h1>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            {currentUser.role === "master"
-              ? "Menampilkan seluruh tenant, dikelompokkan per owner"
-              : "Menampilkan tenant yang kamu miliki"}
-          </p>
+          <p className="text-xs text-zinc-400 mt-0.5">Menampilkan data tenant dari server</p>
         </div>
         <button
           onClick={openAddForm}
@@ -189,39 +174,22 @@ export default function TenantPage() {
         </button>
       </div>
 
-      {visibleTenants.length === 0 ? (
+      {isLoading ? (
+        <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs">
+          <p className="text-xs text-zinc-400 py-6 text-center">Memuat data tenant...</p>
+        </div>
+      ) : errorMessage ? (
+        <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs">
+          <p className="text-xs text-red-500 py-6 text-center">{errorMessage}</p>
+        </div>
+      ) : tenants.length === 0 ? (
         <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs">
           <p className="text-xs text-zinc-400 py-6 text-center">Belum ada tenant.</p>
         </div>
-      ) : currentUser.role === "master" ? (
-        // TAMPILAN MASTER: dikelompokkan per owner, tiap grup ada sub judul kecil
-        <div className="space-y-5">
-          {groupedByOwner.map((group) => (
-            <div key={group.owner.id} className="space-y-2">
-              <p className="text-xs font-bold text-zinc-500 px-1">
-                {group.owner.name}{" "}
-                <span className="font-normal text-zinc-400">({group.tenants.length} tenant)</span>
-              </p>
-              <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs">
-                <div className="divide-y divide-zinc-100">
-                  {group.tenants.map((tenant) => (
-                    <TenantRow
-                      key={tenant.id}
-                      tenant={tenant}
-                      onEdit={handleEditClick}
-                      onDelete={handleDelete}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
       ) : (
-        // TAMPILAN ADMIN (mewakili 1 owner): list rata biasa, tanpa pengelompokan
         <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs">
           <div className="divide-y divide-zinc-100">
-            {visibleTenants.map((tenant) => (
+            {tenants.map((tenant) => (
               <TenantRow
                 key={tenant.id}
                 tenant={tenant}
@@ -262,36 +230,23 @@ export default function TenantPage() {
                 />
               </div>
 
+              <p className="text-[10px] text-zinc-400 -mt-2">
+                Nomor HP yang tampil di daftar diambil otomatis dari karyawan yang ditempatkan di tenant ini
+                (atur di menu Karyawan).
+              </p>
+
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-600">Kontak</label>
-                <input
-                  type="text"
-                  required
-                  value={formContact}
-                  onChange={(e) => setFormContact(e.target.value)}
-                  placeholder="08xxxxxxxxxx"
-                  className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 text-sm outline-none focus:border-[#E52424]"
-                />
+                <label className="text-xs font-semibold text-zinc-600">Alamat</label>
+                <input type="text" value={formAddress} onChange={(e) => setFormAddress(e.target.value)} placeholder="Alamat tenant" className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 text-sm outline-none focus:border-[#E52424]" />
               </div>
 
-              {/* Pemilihan owner cuma muncul kalau yang bikin itu master.
-                  Kalau yang login admin (mewakili 1 owner), tenant otomatis nempel ke dia sendiri. */}
-              {currentUser.role === "master" && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-zinc-600">Owner</label>
-                  <select
-                    value={formOwnerId}
-                    onChange={(e) => setFormOwnerId(Number(e.target.value))}
-                    className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 text-sm outline-none focus:border-[#E52424] bg-white"
-                  >
-                    {ownerOptions.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-zinc-600">Status</label>
+                <select value={formStatus ? "true" : "false"} onChange={(e) => setFormStatus(e.target.value === "true")} className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 text-sm outline-none focus:border-[#E52424] bg-white">
+                  <option value="true">Aktif</option>
+                  <option value="false">Nonaktif</option>
+                </select>
+              </div>
 
               <div className="flex gap-2 pt-2">
                 <button

@@ -1,7 +1,7 @@
 const jwt = require("jsonwebtoken");
 const db = require("../models");
 
-// Ambil model secara fleksibel untuk mencegah error undefined akibat perbedaan kapitalisasi
+const KaryawanModel = db.Karyawan || db.karyawan;
 const Penjualan = db.penjualan || db.Penjualan;
 const UserModel = db.User || db.user || db.users;
 const ProdukModel = db.produk || db.Produk || db.produks;
@@ -33,7 +33,7 @@ const checkoutTransaksi = async (req, res) => {
         try {
           const decoded = jwt.verify(
             token,
-            process.env.JWT_SECRET || "secret_key_pos_raos"
+            process.env.JWT_SECRET || "secret_key_pos_raos",
           );
           userId = decoded.id || decoded.userId;
         } catch (err) {
@@ -54,6 +54,9 @@ const checkoutTransaksi = async (req, res) => {
       });
     }
 
+    const karyawan = await KaryawanModel.findOne({ where: { userId } });
+    const outletId = karyawan ? karyawan.outletId : null;
+
     // 1. Generate Kode Invoice Unik
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const randomNum = Math.floor(1000 + Math.random() * 9000);
@@ -63,14 +66,15 @@ const checkoutTransaksi = async (req, res) => {
     const dataPenjualan = items.map((item) => {
       const sausArray = Array.isArray(item.saus || item.sauce)
         ? item.saus || item.sauce
-        : (item.saus || item.sauce)
-        ? [item.saus || item.sauce]
-        : [];
+        : item.saus || item.sauce
+          ? [item.saus || item.sauce]
+          : [];
 
       return {
         invoice,
         idProduk: Number(item.idProduk || item.productId || item.id || 0),
         userId: Number(userId),
+        outletId, 
         namaProduk: item.namaProduk || item.name || "Produk",
         pcs: Number(item.pcs || 1),
         pax: Number(item.pax || 1),
@@ -162,7 +166,63 @@ const tampilPenjualanByUserId = async (req, res) => {
   }
 };
 
+const tampilPenjualanByOutletId = async (req, res) => {
+  try {
+    const outletId = req.params.outletId;
+
+    if (!outletId) {
+      return res.status(400).json({
+        success: false,
+        message: "Outlet Id wajib diisi",
+      });
+    }
+
+    const includeOptions = [];
+
+    if (UserModel) {
+      includeOptions.push({
+        model: UserModel,
+        as: "kasir",
+        attributes: ["id", "username"],
+      });
+    }
+
+    if (ProdukModel) {
+      includeOptions.push({
+        model: ProdukModel,
+        as: "produk",
+        required: false,
+      });
+    }
+
+    const dataPenjualan = await Penjualan.findAll({
+      where: { outletId },
+      include: includeOptions,
+      order: [["createdAt", "DESC"]],
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Berhasil mengambil data penjualan berdasarkan Outlet ID",
+      totalItem: dataPenjualan.length,
+      data: dataPenjualan,
+    });
+  } catch (error) {
+    console.error("Error pada tampilPenjualanByOutletId:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan server saat mengambil data penjualan.",
+      error: error.message,
+    });
+  }
+};
+
+const tampilPenjualanByOwner = async (req, res) => {
+  
+};
+
 module.exports = {
   checkoutTransaksi,
   tampilPenjualanByUserId,
+  tampilPenjualanByOutletId,
 };
