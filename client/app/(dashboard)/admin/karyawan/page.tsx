@@ -369,7 +369,7 @@ export default function KaryawanPage() {
             mainTab === "Absensi" ? "bg-[#E52424] text-white" : "text-zinc-500"
           }`}
         >
-          Absensi Karyawan
+          Absensi Karyawan iiii
         </button>
       </div>
 
