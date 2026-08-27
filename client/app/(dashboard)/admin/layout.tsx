@@ -16,14 +16,14 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
     </svg>
   ),
-  Penjualan: ({ active }: { active: boolean }) => (
+  Analisa: ({ active }: { active: boolean }) => (
     <svg className={`w-5 h-5 ${active ? "text-[#E52424]" : "text-zinc-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 21H21M3 21V13H9V21M9 21V3H15V21M15 21V9H21V21" />
     </svg>
   ),
   Produk: ({ active }: { active: boolean }) => (
     <svg className={`w-5 h-5 ${active ? "text-[#E52424]" : "text-zinc-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
     </svg>
   ),
     Tenant: ({ active }: { active: boolean }) => (
@@ -64,7 +64,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { label: "Dashboard", path: "/admin", Icon: Icons.Dashboard },
     { label: "Karyawan", path: "/admin/karyawan", Icon: Icons.Karyawan },
     { label: "Tenant", path: "/admin/tenant", Icon: Icons.Tenant },
-    { label: "Analisa", path: "/admin/analisa", Icon: Icons.Penjualan },
+    { label: "Analisa", path: "/admin/analisa", Icon: Icons.Analisa },
     { label: "Produk", path: "/admin/produk", Icon: Icons.Produk },
   ];
 
