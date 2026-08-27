@@ -14,7 +14,6 @@ module.exports = (sequelize, DataTypes) => {
       }
 
       // Relasi userId ke tabel users (kasir)
-      // Mengecek models.User maupun models.user agar tidak throw error
       const UserModel = models.User || models.user;
       if (UserModel) {
         penjualan.belongsTo(UserModel, {
@@ -23,11 +22,21 @@ module.exports = (sequelize, DataTypes) => {
         });
       }
 
+      // Relasi outletId ke tabel outlets
       const OutletModel = models.outlet || models.Outlet;
       if (OutletModel) {
         penjualan.belongsTo(OutletModel, {
           foreignKey: 'outletId',
           as: 'outlet'
+        });
+      }
+
+      // Relasi ke tabel detail_saus untuk analisa saus per pcs
+      const DetailSausModel = models.DetailSaus || models.detailSaus || models.detailsaus;
+      if (DetailSausModel) {
+        penjualan.hasMany(DetailSausModel, {
+          foreignKey: 'penjualanId',
+          as: 'detailSaus'
         });
       }
     }

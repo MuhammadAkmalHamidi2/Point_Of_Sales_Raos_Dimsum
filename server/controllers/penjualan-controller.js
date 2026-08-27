@@ -5,6 +5,7 @@ const KaryawanModel = db.Karyawan || db.karyawan;
 const Penjualan = db.penjualan || db.Penjualan;
 const UserModel = db.User || db.user || db.users;
 const ProdukModel = db.produk || db.Produk || db.produks;
+const DetailSausModel = db.detailSaus || db.DetailSaus || db.detailsaus;
 const sequelize = db.sequelize;
 
 const checkoutTransaksi = async (req, res) => {
@@ -59,7 +60,7 @@ const checkoutTransaksi = async (req, res) => {
     // ----------------------------------------------------
     const karyawan = await KaryawanModel.findOne({
       where: { userId },
-      transaction
+      transaction,
     });
 
     if (!karyawan || !karyawan.outletId) {
@@ -108,6 +109,33 @@ const checkoutTransaksi = async (req, res) => {
     // 5. BULK CREATE KE TABEL PENJUALAN
     // ----------------------------------------------------
     const result = await Penjualan.bulkCreate(dataPenjualan, { transaction });
+
+    // ----------------------------------------------------
+    // 6. BULK CREATE RINCIAN SAUS PER PCS (ANALISA SAUS)
+    // ----------------------------------------------------
+    if (DetailSausModel) {
+      const detailSausData = [];
+
+      result.forEach((penjualanItem, index) => {
+        const cartItem = items[index];
+        const sauceDetails = cartItem.sauceDetails || cartItem.detailSaus || [];
+
+        if (Array.isArray(sauceDetails) && sauceDetails.length > 0) {
+          sauceDetails.forEach((s) => {
+            detailSausData.push({
+              penjualanId: penjualanItem.id,
+              invoice,
+              namaSaus: s.namaSaus || s.name,
+              qty: Number(s.qty || 0),
+            });
+          });
+        }
+      });
+
+      if (detailSausData.length > 0) {
+        await DetailSausModel.bulkCreate(detailSausData, { transaction });
+      }
+    }
 
     await transaction.commit();
 
@@ -164,6 +192,14 @@ const tampilPenjualanByUserId = async (req, res) => {
       });
     }
 
+    if (DetailSausModel) {
+      includeOptions.push({
+        model: DetailSausModel,
+        as: "detailSaus",
+        required: false,
+      });
+    }
+
     const dataPenjualan = await Penjualan.findAll({
       where: { userId },
       include: includeOptions,
@@ -211,6 +247,14 @@ const tampilPenjualanByOutletId = async (req, res) => {
       includeOptions.push({
         model: ProdukModel,
         as: "produk",
+        required: false,
+      });
+    }
+
+    if (DetailSausModel) {
+      includeOptions.push({
+        model: DetailSausModel,
+        as: "detailSaus",
         required: false,
       });
     }

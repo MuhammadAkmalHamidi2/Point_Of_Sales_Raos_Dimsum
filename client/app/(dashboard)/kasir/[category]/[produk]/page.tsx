@@ -35,6 +35,11 @@ type Product = {
   hargaproduks: HargaProduk[];
 };
 
+export type SauceDetail = {
+  namaSaus: string;
+  qty: number;
+};
+
 type CartItem = {
   id: string;
   productId: number;
@@ -44,6 +49,7 @@ type CartItem = {
   pcs: number;
   pax: number;
   sauce: string[];
+  sauceDetails: SauceDetail[];
   image: string | null;
   quantity: number;
 };
@@ -65,11 +71,11 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Array ID saus yang urutannya mencerminkan urutan waktu klik
   const [selectedSauces, setSelectedSauces] = useState<number[]>([]);
   const [selectedPcsOption, setSelectedPcsOption] = useState<HargaProduk | null>(null);
   const [pax, setPax] = useState(1);
 
-  // State Pop-up Notifikasi
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const getProductDetail = async () => {
@@ -111,9 +117,10 @@ export default function ProductDetailPage() {
       ? Number(product.harga)
       : 0;
 
-  const selectedSauceObjects = (product?.toppings || []).filter((s) =>
-    selectedSauces.includes(s.id)
-  );
+  // PERBAIKAN: Petakan dari selectedSauces agar urutan objek persis sesuai riwayat klik
+  const selectedSauceObjects = selectedSauces
+    .map((id) => (product?.toppings || []).find((s) => s.id === id))
+    .filter((s): s is Topping => Boolean(s));
 
   const totalPcs = selectedPcsOption ? selectedPcsOption.qty : 0;
   const numSauces = selectedSauceObjects.length;
@@ -153,13 +160,27 @@ export default function ProductDetailPage() {
       }
     }
 
+    // --- LOGIKA PEMBAGIAN SAUS AUTOMATIS (SESUAI URUTAN KLIK) ---
+    const totalPcsOrder = selectedPcsOption.qty * pax;
+    let sauceDetails: SauceDetail[] = [];
+
+    if (numSauces > 0) {
+      const baseQtyPerSauce = Math.floor(totalPcsOrder / numSauces);
+      const remainder = totalPcsOrder % numSauces;
+
+      sauceDetails = selectedSauceObjects.map((sauce, index) => ({
+        namaSaus: sauce.namaTopping,
+        qty: baseQtyPerSauce + (index < remainder ? 1 : 0),
+      }));
+    }
+
     const sauceNames =
       selectedSauceObjects.length > 0
         ? selectedSauceObjects.map((option) => option.namaTopping)
         : ["original"];
 
-    const sortedSauceIds = [...selectedSauces].sort((a, b) => a - b);
-    const sauceKey = sortedSauceIds.length > 0 ? sortedSauceIds.join("-") : "original";
+    // PERBAIKAN: Gunakan urutan klik langsung sebagai kunci identitas keranjang
+    const sauceKey = selectedSauces.length > 0 ? selectedSauces.join("-") : "original";
     const cartItemId = `${product.id}-${sauceKey}-${selectedPcsOption.qty}`;
 
     const newItem: CartItem = {
@@ -171,6 +192,7 @@ export default function ProductDetailPage() {
       pcs: selectedPcsOption.qty,
       pax: pax,
       sauce: sauceNames,
+      sauceDetails: sauceDetails,
       image: product.produkImg,
       quantity: pax,
     };
@@ -180,6 +202,12 @@ export default function ProductDetailPage() {
     if (existingIndex !== -1) {
       cart[existingIndex].pax += pax;
       cart[existingIndex].quantity += pax;
+
+      // Akumulasi qty saus jika item sejenis ditambahkan lagi
+      cart[existingIndex].sauceDetails = cart[existingIndex].sauceDetails.map((s, idx) => ({
+        ...s,
+        qty: s.qty + sauceDetails[idx].qty,
+      }));
     } else {
       cart.push(newItem);
     }
@@ -187,7 +215,6 @@ export default function ProductDetailPage() {
     localStorage.setItem("kasir-cart", JSON.stringify(cart));
     window.dispatchEvent(new Event("cart-updated"));
 
-    // Tampilkan Pop-up
     setShowSuccessModal(true);
   };
 
@@ -271,8 +298,8 @@ export default function ProductDetailPage() {
                   <label
                     key={sauce.id}
                     className={`flex items-center gap-3 w-full min-h-[52px] px-3.5 rounded-xl border cursor-pointer select-none transition-all duration-200 ${isSelected
-                      ? "border-[#E52424] bg-[#E52424]/5"
-                      : "border-zinc-200 bg-white hover:border-zinc-300"
+                        ? "border-[#E52424] bg-[#E52424]/5"
+                        : "border-zinc-200 bg-white hover:border-zinc-300"
                       }`}
                   >
                     <input
@@ -350,8 +377,8 @@ export default function ProductDetailPage() {
                     type="button"
                     onClick={() => setSelectedPcsOption(opt)}
                     className={`h-14 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-[0.98] ${isSelected
-                      ? "border-[#E52424] bg-[#E52424] text-white"
-                      : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                        ? "border-[#E52424] bg-[#E52424] text-white"
+                        : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
                       }`}
                   >
                     <span className="text-xs font-bold">{opt.qty} PCS</span>
@@ -391,7 +418,6 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      {/* POP-UP / MODAL NOTIFIKASI */}
       {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-xl">
