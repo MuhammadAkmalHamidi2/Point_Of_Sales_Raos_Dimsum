@@ -53,21 +53,6 @@ export default function KasirPage() {
           </h2>
         </div>
 
-        {/* Search */}
-        <div className="relative mb-6">
-
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">
-            🔍
-          </span>
-
-          <input
-            type="text"
-            placeholder="Cari produk..."
-            className="w-full h-11 bg-white border border-zinc-200 rounded-xl pl-11 pr-4 text-sm outline-none focus:border-[#E52424] focus:ring-4 focus:ring-[#E52424]/10"
-          />
-
-        </div>
-
         {/* Category */}
         <section>
 

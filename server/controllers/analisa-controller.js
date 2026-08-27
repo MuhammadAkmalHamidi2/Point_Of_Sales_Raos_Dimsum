@@ -6,6 +6,7 @@ const Outlet = db.Outlet;
 const Produk = db.produk;
 const Topping = db.topping;
 const HargaProduk = db.hargaProduk;
+const DetailSaus = db.DetailSaus || db.detailSaus || db.detailsaus;
 
 function getDateKey(date) {
   const year = date.getFullYear();
@@ -39,26 +40,6 @@ function createEmptySummary(packageGroups, sauceOptions) {
   };
 }
 
-function parseSauces(value) {
-  let sauces = value;
-
-  if (typeof sauces === "string") {
-    try {
-      sauces = JSON.parse(sauces);
-    } catch {
-      sauces = [sauces];
-    }
-  }
-
-  if (!Array.isArray(sauces)) {
-    return [];
-  }
-
-  return sauces
-    .map((sauce) => String(sauce).trim())
-    .filter((sauce) => sauce && sauce.toLowerCase() !== "original");
-}
-
 function findSauceName(sauce, sauceOptions) {
   return sauceOptions.find(
     (name) => name.toLowerCase() === sauce.toLowerCase(),
@@ -82,16 +63,10 @@ function addSaleToSummary(summary, sale, sauceOptions, productCategories) {
     packageData.pax += pax;
   }
 
-  const sauces = parseSauces(sale.saus);
+  const sauceDetails = sale.detailSaus || [];
 
-  if (sauces.length === 0) {
-    return;
-  }
-
-  const pcsPerSauce = (pcs * pax) / sauces.length;
-
-  for (const sauce of sauces) {
-    const sauceName = findSauceName(sauce, sauceOptions);
+  for (const detail of sauceDetails) {
+    const sauceName = findSauceName(detail.namaSaus, sauceOptions);
 
     if (!sauceName) {
       continue;
@@ -100,7 +75,7 @@ function addSaleToSummary(summary, sale, sauceOptions, productCategories) {
     const sauceData = summary.sauces.find((item) => item.name === sauceName);
 
     if (sauceData) {
-      sauceData.count += pcsPerSauce;
+      sauceData.count += Number(detail.qty) || 0;
     }
   }
 }
@@ -206,7 +181,17 @@ async function getAnalisa(req, res) {
               [Op.lt]: nextMonday,
             },
           },
-          attributes: ["idProduk", "pcs", "pax", "saus", "createdAt"],
+          attributes: ["id", "idProduk", "pcs", "pax", "createdAt"],
+          include: DetailSaus
+            ? [
+                {
+                  model: DetailSaus,
+                  as: "detailSaus",
+                  attributes: ["namaSaus", "qty"],
+                  required: false,
+                },
+              ]
+            : [],
         })
       : [];
 

@@ -6,6 +6,7 @@ const UserModel = db.User || db.user || db.users;
 const ProdukModel = db.produk || db.Produk || db.produks;
 const HargaProdukModel = db.hargaProduk;
 const OutletModel = db.Outlet;
+const DetailSausModel = db.DetailSaus || db.detailSaus || db.detailsaus;
 const sequelize = db.sequelize;
 
 function parseSauces(value) {
@@ -188,6 +189,33 @@ const checkoutTransaksi = async (req, res) => {
     // 3. Simpan semua baris barang sekaligus
     const result = await Penjualan.bulkCreate(dataPenjualan, { transaction });
 
+    if (DetailSausModel) {
+      const detailSausData = [];
+      result.forEach((penjualanItem, index) => {
+        const item = items[index];
+        const sauceDetails = item.sauceDetails || item.detailSaus || [];
+
+        if (!Array.isArray(sauceDetails)) return;
+
+        sauceDetails.forEach((sauce) => {
+          const namaSaus = sauce.namaSaus || sauce.name;
+          const qty = Number(sauce.qty);
+          if (namaSaus && Number.isFinite(qty) && qty >= 0) {
+            detailSausData.push({
+              penjualanId: penjualanItem.id,
+              invoice,
+              namaSaus,
+              qty,
+            });
+          }
+        });
+      });
+
+      if (detailSausData.length > 0) {
+        await DetailSausModel.bulkCreate(detailSausData, { transaction });
+      }
+    }
+
     await transaction.commit();
 
     return res.status(201).json({
@@ -247,6 +275,14 @@ const tampilPenjualanByUserId = async (req, res) => {
       includeOptions.push({
         model: ProdukModel,
         as: "produk",
+        required: false,
+      });
+    }
+
+    if (DetailSausModel) {
+      includeOptions.push({
+        model: DetailSausModel,
+        as: "detailSaus",
         required: false,
       });
     }
@@ -317,6 +353,14 @@ const tampilPenjualanByOutletId = async (req, res) => {
       includeOptions.push({
         model: ProdukModel,
         as: "produk",
+        required: false,
+      });
+    }
+
+    if (DetailSausModel) {
+      includeOptions.push({
+        model: DetailSausModel,
+        as: "detailSaus",
         required: false,
       });
     }

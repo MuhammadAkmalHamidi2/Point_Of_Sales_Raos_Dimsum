@@ -30,6 +30,15 @@ module.exports = (sequelize, DataTypes) => {
           as: 'outlet'
         });
       }
+
+      const DetailSausModel = models.DetailSaus || models.detailSaus || models.detailsaus;
+      if (DetailSausModel) {
+        penjualan.hasMany(DetailSausModel, {
+          foreignKey: 'penjualanId',
+          as: 'detailSaus'
+        });
+      }
+
     }
   }
 

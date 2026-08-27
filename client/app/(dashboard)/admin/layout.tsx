@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import RoleGuard from "@/components/auth/RoleGuard";
+import Swal from "sweetalert2";
 
 const Icons = {
   Dashboard: ({ active }: { active: boolean }) => (
@@ -35,22 +36,29 @@ const Icons = {
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isChecking, setIsChecking] = useState(true);
 
-  useEffect(() => {
-    const role = localStorage.getItem("role");
-    const token = localStorage.getItem("token");
+  const handleLogout = async () => {
+    const result = await Swal.fire({
+      title: "Logout?",
+      text: "Kamu akan keluar dari akun ini.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, logout",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#E52424",
+    });
 
-    if (!token || role !== "admin") {
-      router.push("/login");
-    } else {
-      setIsChecking(false);
-    }
-  }, []);
+    if (!result.isConfirmed) return;
 
-  if (isChecking) {
-    return null;
-  }
+    localStorage.clear();
+    await Swal.fire({
+      icon: "success",
+      title: "Berhasil logout",
+      timer: 1200,
+      showConfirmButton: false,
+    });
+    router.replace("/login");
+  };
 
   const navItems = [
     { label: "Dashboard", path: "/admin", Icon: Icons.Dashboard },
@@ -62,7 +70,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   
   return (
-    <div className="w-full min-h-screen bg-[#F5F6F8] text-[#212121] font-sans antialiased flex flex-col md:flex-row">
+    <RoleGuard allowedRoles={["admin", "master"]}>
+      <div className="w-full min-h-screen bg-[#F5F6F8] text-[#212121] font-sans antialiased flex flex-col md:flex-row">
       
       {/* DESKTOP SIDEBAR (Visible md:flex) */}
       <aside className="hidden md:flex flex-col w-64 bg-white border-r border-zinc-200/80 sticky top-0 h-screen p-5 z-50">
@@ -105,6 +114,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <p className="text-xs font-bold text-[#212121] truncate">Admin Raos</p>
             <p className="text-[10px] text-zinc-400 truncate">admin@raosdimsum.com</p>
           </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            title="Logout"
+            aria-label="Logout"
+            className="w-8 h-8 rounded-lg bg-red-50 text-[#E52424] flex items-center justify-center hover:bg-red-100 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6A2.25 2.25 0 005.25 5.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 15l3-3m0 0l-3-3m3 3H3" />
+            </svg>
+          </button>
         </div>
       </aside>
 
@@ -134,6 +154,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
       </div>
 
-    </div>
+      </div>
+    </RoleGuard>
   );
 }

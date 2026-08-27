@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
-
 import KasirHeader from "@/components/kasir/KasirHeader";
 import BottomNavigation from "@/components/kasir/BottomNavigation";
+import RoleGuard from "@/components/auth/RoleGuard";
+import Swal from "sweetalert2";
 
 interface AbsenItem {
   id: number;
@@ -16,10 +16,8 @@ interface AbsenItem {
   createdAt: string;
 }
 
-// Fallback jika env belum di-set
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-// Helper untuk format URL Foto
 const getImageUrl = (path?: string) => {
   if (!path) return "";
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
@@ -27,12 +25,9 @@ const getImageUrl = (path?: string) => {
 };
 
 export default function AbsenPage() {
-  const router = useRouter();
-
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingStatus, setIsFetchingStatus] = useState(true);
@@ -59,6 +54,28 @@ export default function AbsenPage() {
     updateClock();
     const interval = setInterval(updateClock, 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    setCameraError(null);
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false,
+      });
+      if (videoRef.current) videoRef.current.srcObject = mediaStream;
+    } catch (err) {
+      console.error("Gagal mengakses kamera:", err);
+      setCameraError("Akses kamera ditolak atau perangkat tidak ditemukan.");
+    }
+  }, []);
+
+  const stopCamera = useCallback(() => {
+    const currentStream = videoRef.current?.srcObject;
+    if (currentStream instanceof MediaStream) {
+      currentStream.getTracks().forEach((track) => track.stop());
+      if (videoRef.current) videoRef.current.srcObject = null;
+    }
   }, []);
 
   // Cek Riwayat Absen & Status Hari Ini
@@ -106,38 +123,14 @@ export default function AbsenPage() {
     } finally {
       setIsFetchingStatus(false);
     }
-  }, []);
+  }, [startCamera]);
 
   useEffect(() => {
-    fetchHistoryAndCheckToday();
+    void Promise.resolve().then(fetchHistoryAndCheckToday);
     return () => {
       stopCamera();
     };
-  }, [fetchHistoryAndCheckToday]);
-
-  const startCamera = async () => {
-    setCameraError(null);
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false,
-      });
-      setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
-    } catch (err) {
-      console.error("Gagal mengakses kamera:", err);
-      setCameraError("Akses kamera ditolak atau perangkat tidak ditemukan.");
-    }
-  };
-
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-      setStream(null);
-    }
-  };
+  }, [fetchHistoryAndCheckToday, stopCamera]);
 
   const takePhoto = () => {
     if (videoRef.current && canvasRef.current) {
@@ -199,15 +192,30 @@ export default function AbsenPage() {
       const data = await res.json().catch(() => null);
 
       if (res.ok && (data?.status || data?.success || res.status === 200 || res.status === 201)) {
-        alert("Absensi berhasil disimpan!");
+        await Swal.fire({
+          icon: "success",
+          title: "Absensi berhasil",
+          text: "Data absensi berhasil disimpan.",
+          confirmButtonColor: "#E52424",
+        });
         setCapturedImage(null);
         fetchHistoryAndCheckToday();
       } else {
-        alert(data?.message || "Gagal menyimpan absensi. Silakan coba lagi.");
+        await Swal.fire({
+          icon: "error",
+          title: "Absensi gagal",
+          text: data?.message || "Gagal menyimpan absensi. Silakan coba lagi.",
+          confirmButtonColor: "#E52424",
+        });
       }
     } catch (error) {
       console.error("Error submitting absen:", error);
-      alert("Terjadi kesalahan jaringan/server.");
+      await Swal.fire({
+        icon: "error",
+        title: "Terjadi kesalahan",
+        text: "Terjadi kesalahan jaringan/server.",
+        confirmButtonColor: "#E52424",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -225,7 +233,8 @@ export default function AbsenPage() {
   });
 
   return (
-    <main className="min-h-screen bg-[#F5F5F5] pb-24">
+    <RoleGuard allowedRoles={["kasir"]}>
+      <main className="min-h-screen bg-[#F5F5F5] pb-24">
       <canvas ref={canvasRef} className="hidden" />
       <KasirHeader title="Absensi Kasir" />
 
@@ -335,7 +344,7 @@ export default function AbsenPage() {
           /* SECTION: JIKA BELUM ABSEN (Kamera Absen) */
           <>
             <div className="bg-white rounded-2xl border border-zinc-200 p-3 shadow-sm">
-              <div className="relative w-full aspect-[3/4] bg-zinc-900 rounded-xl overflow-hidden flex items-center justify-center">
+              <div className="relative w-full aspect-3/4 bg-zinc-900 rounded-xl overflow-hidden flex items-center justify-center">
                 {cameraError ? (
                   <div className="text-center px-6 space-y-3">
                     <svg className="w-10 h-10 text-red-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -440,7 +449,7 @@ export default function AbsenPage() {
                 &times;
               </button>
             </div>
-            <div className="relative aspect-[3/4] bg-zinc-900 rounded-xl overflow-hidden">
+            <div className="relative aspect-3/4 bg-zinc-900 rounded-xl overflow-hidden">
               <img
                 src={selectedPhoto}
                 alt="Bukti Absen"
@@ -459,6 +468,7 @@ export default function AbsenPage() {
       )}
 
       <BottomNavigation />
-    </main>
+      </main>
+    </RoleGuard>
   );
 }
