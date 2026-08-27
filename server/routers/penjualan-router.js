@@ -4,16 +4,14 @@ const {
   tampilPenjualanByUserId,
   tampilPenjualanByOutletId,
 } = require("../controllers/penjualan-controller");
-
-// Pastikan menyamakan dengan nama file sebenarnya di folder middleware
 const verifyToken = require("../middlewares/verify-token"); 
 const verifyRole = require("../middlewares/verify-role");
 
 const router = express.Router();
 
 router.post("/checkout", verifyToken, verifyRole(["kasir"]), checkoutTransaksi);
-router.get("/user/:userId", verifyToken, tampilPenjualanByUserId);
 router.get("/my-history", verifyToken, tampilPenjualanByUserId);
-router.get("/outlet/:outletId", verifyToken, tampilPenjualanByOutletId);
+router.get("/user/:userId", verifyToken, verifyRole(["admin", "master"]), tampilPenjualanByUserId);
+router.get("/outlet/:outletId", verifyToken, verifyRole(["admin", "master"]), tampilPenjualanByOutletId);
 
 module.exports = router;

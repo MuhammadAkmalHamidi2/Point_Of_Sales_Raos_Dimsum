@@ -72,6 +72,13 @@ const createKaryawan = async (req, res) => {
         .json({ success: false, message: "Username tidak valid" });
     }
 
+    if (!phone?.trim() || !/^(\+62|0)8[0-9]{8,11}$/.test(phone.trim())) {
+      await t.rollback();
+      return res
+        .status(400)
+        .json({ success: false, message: "Nomor HP tidak valid" });
+    }
+
     if (category === "Tenant") {
       const outlet = await Outlet.findOne({
         where:
@@ -181,6 +188,13 @@ const updateKaryawan = async (req, res) => {
       return res
         .status(400)
         .json({ success: false, message: "Username tidak valid" });
+    }
+
+    if (!phone?.trim() || !/^(\+62|0)8[0-9]{8,11}$/.test(phone.trim())) {
+      await t.rollback();
+      return res
+        .status(400)
+        .json({ success: false, message: "Nomor HP tidak valid" });
     }
 
     if (karyawan.category !== category) {
