@@ -113,13 +113,20 @@ export default function DashboardKeuangan() {
             <input
               type="date"
               value={customStart}
-              onChange={(e) => setCustomStart(e.target.value)}
+              onChange={(e) => {
+                const nextStart = e.target.value;
+                setCustomStart(nextStart);
+                if (customEnd && nextStart > customEnd) {
+                  setCustomEnd(nextStart);
+                }
+              }}
               className="px-3 py-1.5 border border-zinc-200 rounded-lg text-zinc-700 font-medium outline-none focus:border-[#E52424]"
             />
             <span className="text-zinc-400">s/d</span>
             <input
               type="date"
               value={customEnd}
+              min={customStart || undefined}
               onChange={(e) => setCustomEnd(e.target.value)}
               className="px-3 py-1.5 border border-zinc-200 rounded-lg text-zinc-700 font-medium outline-none focus:border-[#E52424]"
             />

@@ -1,4 +1,4 @@
-const { User, Role } = require("../models");
+const { User, Role, Karyawan } = require("../models");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
@@ -9,7 +9,15 @@ module.exports = {
 
       const user = await User.findOne({
         where: { username },
-        include: Role,
+        include: [
+          Role,
+          {
+            model: Karyawan,
+            as: "karyawan",
+            attributes: ["outletId"],
+            required: false,
+          },
+        ],
       });
 
       if (!user) {
@@ -27,8 +35,10 @@ module.exports = {
         });
       }
 
+      const outletId = user.karyawan?.outletId ?? null;
+
       const token = jwt.sign(
-        { id: user.id, role: user.Role.role },
+        { id: user.id, role: user.Role.role, outletId },
         process.env.JWT_SECRET,
         {
           expiresIn: "1d",
@@ -40,6 +50,7 @@ module.exports = {
         message: "Login berhasil",
         token,
         role: user.Role.role,
+        outletId,
       });
     } catch (error) {
       console.log(error);
@@ -53,7 +64,15 @@ module.exports = {
   getMe: async (req, res) => {
     try {
       const user = await User.findByPk(req.user.id, {
-        include: Role,
+        include: [
+          Role,
+          {
+            model: Karyawan,
+            as: "karyawan",
+            attributes: ["outletId"],
+            required: false,
+          },
+        ],
         attributes: { exclude: ["password"] },
       });
 
@@ -64,10 +83,13 @@ module.exports = {
         });
       }
 
+      const userData = user.toJSON();
+      userData.outletId = user.karyawan?.outletId ?? null;
+
       res.status(200).json({
         status: true,
         message: "Berhasil mengambil data user",
-        data: user,
+        data: userData,
       });
     } catch (error) {
       console.log(error);

@@ -1,17 +1,36 @@
-const jwt = require("jsonwebtoken");
 const db = require("../models");
 
 const KaryawanModel = db.Karyawan || db.karyawan;
 const Penjualan = db.penjualan || db.Penjualan;
 const UserModel = db.User || db.user || db.users;
 const ProdukModel = db.produk || db.Produk || db.produks;
+const HargaProdukModel = db.hargaProduk;
+const OutletModel = db.Outlet;
 const sequelize = db.sequelize;
+
+function parseSauces(value) {
+  if (value === undefined || value === null) return [];
+
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      value = [value];
+    }
+  }
+
+  if (!Array.isArray(value)) value = [value];
+
+  return value
+    .map((sauce) => String(sauce).trim())
+    .filter((sauce) => sauce && sauce.toLowerCase() !== "original");
+}
 
 const checkoutTransaksi = async (req, res) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const { totalBayar, metodePembayaran, items } = req.body;
+    const { metodePembayaran, items } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       await transaction.rollback();
@@ -21,32 +40,8 @@ const checkoutTransaksi = async (req, res) => {
       });
     }
 
-    // ----------------------------------------------------
-    // AMBIL USER ID DARI TOKEN (req.user ATAU Header Authorization)
-    // ----------------------------------------------------
-    let userId = req.user?.id;
-
-    if (!userId) {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        const token = authHeader.split(" ")[1];
-        try {
-          const decoded = jwt.verify(
-            token,
-            process.env.JWT_SECRET || "secret_key_pos_raos",
-          );
-          userId = decoded.id || decoded.userId;
-        } catch (err) {
-          await transaction.rollback();
-          return res.status(401).json({
-            success: false,
-            message: "Token tidak valid atau telah kadaluwarsa",
-          });
-        }
-      }
-    }
-
-    if (!userId) {
+    const userId = Number(req.user?.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
       await transaction.rollback();
       return res.status(401).json({
         success: false,
@@ -54,35 +49,140 @@ const checkoutTransaksi = async (req, res) => {
       });
     }
 
-    const karyawan = await KaryawanModel.findOne({ where: { userId } });
-    const outletId = karyawan ? karyawan.outletId : null;
+    if (req.user.role !== "kasir") {
+      await transaction.rollback();
+      return res.status(403).json({
+        success: false,
+        message: "Hanya kasir yang dapat membuat transaksi.",
+      });
+    }
 
-    // 1. Generate Kode Invoice Unik
+    const karyawan = await KaryawanModel.findOne({
+      where: { userId },
+      transaction,
+    });
+
+    if (!karyawan?.outletId) {
+      await transaction.rollback();
+      return res.status(403).json({
+        success: false,
+        message: "Kasir belum terdaftar pada outlet.",
+      });
+    }
+
+    const outletId = karyawan.outletId;
+    const paymentMethod = String(metodePembayaran || "").toUpperCase();
+    if (!["CASH", "QRIS"].includes(paymentMethod)) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "Metode pembayaran harus Cash atau QRIS.",
+      });
+    }
+
+    const productIds = items.map((item) =>
+      Number(item.productId || item.idProduk),
+    );
+
+    if (productIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "Product ID tidak valid.",
+      });
+    }
+
+    const products = await ProdukModel.findAll({
+      where: { id: productIds },
+      include: [
+        { model: HargaProdukModel, as: "hargaproduks" },
+        { model: db.topping, as: "toppings" },
+      ],
+      transaction,
+    });
+
+    const productMap = new Map(products.map((product) => [product.id, product]));
+    if (products.length !== new Set(productIds).size) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "Ada produk yang tidak ditemukan.",
+      });
+    }
+
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     const invoice = `INV-${dateStr}-${randomNum}`;
+    const dataPenjualan = [];
+    let calculatedTotal = 0;
 
-    // 2. Mapping data keranjang dengan fallback field (mendukung nama field FE & BE)
-    const dataPenjualan = items.map((item) => {
-      const sausArray = Array.isArray(item.saus || item.sauce)
-        ? item.saus || item.sauce
-        : item.saus || item.sauce
-          ? [item.saus || item.sauce]
-          : [];
+    for (const item of items) {
+      const productId = Number(item.productId || item.idProduk);
+      const product = productMap.get(productId);
+      const pcs = Number(item.pcs);
+      const pax = Number(item.pax);
 
-      return {
+      if (!Number.isInteger(pcs) || pcs <= 0 || !Number.isInteger(pax) || pax <= 0) {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          message: "Jumlah pcs dan pax harus bilangan positif.",
+        });
+      }
+
+      const packagePrice = product.hargaproduks.find(
+        (option) => Number(option.qty) === pcs,
+      );
+      if (!packagePrice) {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Paket ${pcs} pcs tidak tersedia untuk ${product.namaProduk}.`,
+        });
+      }
+
+      const requestedSauces = item.saus || item.sauce;
+      const sauces = parseSauces(requestedSauces);
+      const availableSauceNames = product.toppings.map((topping) =>
+        topping.namaTopping.toLowerCase(),
+      );
+
+      if (sauces.some((sauce) => !availableSauceNames.includes(sauce.toLowerCase()))) {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Saus tidak tersedia untuk ${product.namaProduk}.`,
+        });
+      }
+
+      const saucePricePerPax = sauces.reduce((total, sauce) => {
+        const topping = product.toppings.find(
+          (itemTopping) =>
+            itemTopping.namaTopping.toLowerCase() === sauce.toLowerCase(),
+        );
+        return total + (Number(topping.harga) * pcs) / sauces.length;
+      }, 0);
+      const unitPrice = Number(packagePrice.harga) + saucePricePerPax;
+      const subtotal = unitPrice * pax;
+      calculatedTotal += subtotal;
+
+      dataPenjualan.push({
         invoice,
-        idProduk: Number(item.idProduk || item.productId || item.id || 0),
-        userId: Number(userId),
-        outletId, 
-        namaProduk: item.namaProduk || item.name || "Produk",
-        pcs: Number(item.pcs || 1),
-        pax: Number(item.pax || 1),
-        saus: sausArray,
-        subtotal: Number(item.subtotal || item.price * (item.pax || 1) || 0),
-        totalBayar: Number(totalBayar),
-        metodePembayaran,
-      };
+        idProduk: productId,
+        userId,
+        outletId,
+        namaProduk: product.namaProduk,
+        pcs,
+        pax,
+        saus: sauces.length ? sauces : ["original"],
+        subtotal,
+        totalBayar: calculatedTotal,
+        metodePembayaran: paymentMethod === "CASH" ? "Cash" : "QRIS",
+      });
+    }
+
+    dataPenjualan.forEach((row) => {
+      row.totalBayar = calculatedTotal;
     });
 
     // 3. Simpan semua baris barang sekaligus
@@ -96,8 +196,8 @@ const checkoutTransaksi = async (req, res) => {
       data: {
         invoice,
         kasirId: userId,
-        totalBayar,
-        metodePembayaran,
+        totalBayar: calculatedTotal,
+        metodePembayaran: paymentMethod === "CASH" ? "Cash" : "QRIS",
         totalItems: result.length,
       },
     });
@@ -115,13 +215,20 @@ const checkoutTransaksi = async (req, res) => {
 
 const tampilPenjualanByUserId = async (req, res) => {
   try {
-    // Ambil userId dari URL params atau dari middleware auth (JWT)
-    const userId = req.params.userId || req.user?.id;
+    const requestedUserId = Number(req.params.userId || req.user?.id);
+    const currentUserId = Number(req.user?.id);
 
-    if (!userId) {
+    if (!Number.isInteger(requestedUserId) || requestedUserId <= 0) {
       return res.status(400).json({
         success: false,
         message: "User ID wajib diisi.",
+      });
+    }
+
+    if (req.user.role !== "master" && requestedUserId !== currentUserId) {
+      return res.status(403).json({
+        success: false,
+        message: "Kamu tidak memiliki akses ke riwayat user ini.",
       });
     }
 
@@ -145,7 +252,7 @@ const tampilPenjualanByUserId = async (req, res) => {
     }
 
     const dataPenjualan = await Penjualan.findAll({
-      where: { userId },
+      where: { userId: requestedUserId },
       include: includeOptions,
       order: [["createdAt", "DESC"]],
     });
@@ -168,13 +275,32 @@ const tampilPenjualanByUserId = async (req, res) => {
 
 const tampilPenjualanByOutletId = async (req, res) => {
   try {
-    const outletId = req.params.outletId;
+    const outletId = Number(req.params.outletId);
 
-    if (!outletId) {
+    if (!Number.isInteger(outletId) || outletId <= 0) {
       return res.status(400).json({
         success: false,
         message: "Outlet Id wajib diisi",
       });
+    }
+
+    if (req.user.role !== "master") {
+      const ownedOutlet = await OutletModel.findOne({
+        where: { id: outletId, userId: req.user.id },
+        attributes: ["id"],
+      });
+
+      const assignedEmployee = await KaryawanModel.findOne({
+        where: { userId: req.user.id, outletId },
+        attributes: ["id"],
+      });
+
+      if (!ownedOutlet && !assignedEmployee) {
+        return res.status(403).json({
+          success: false,
+          message: "Kamu tidak memiliki akses ke outlet ini.",
+        });
+      }
     }
 
     const includeOptions = [];
@@ -215,10 +341,6 @@ const tampilPenjualanByOutletId = async (req, res) => {
       error: error.message,
     });
   }
-};
-
-const tampilPenjualanByOwner = async (req, res) => {
-  
 };
 
 module.exports = {

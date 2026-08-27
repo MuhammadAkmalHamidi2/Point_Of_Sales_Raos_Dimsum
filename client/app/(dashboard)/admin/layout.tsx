@@ -56,7 +56,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { label: "Dashboard", path: "/admin", Icon: Icons.Dashboard },
     { label: "Karyawan", path: "/admin/karyawan", Icon: Icons.Karyawan },
     { label: "Tenant", path: "/admin/tenant", Icon: Icons.Tenant },
-    { label: "Penjualan", path: "/admin/analisa", Icon: Icons.Penjualan },
+    { label: "Analisa", path: "/admin/analisa", Icon: Icons.Penjualan },
     { label: "Produk", path: "/admin/produk", Icon: Icons.Produk },
   ];
 

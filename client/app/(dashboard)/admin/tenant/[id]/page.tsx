@@ -23,11 +23,18 @@ type Transaksi = {
   invoice: string;
   namaProduk: string;
   pcs: number;
+  pax: number;
+  saus: string[] | string;
   subtotal: number;
   totalBayar: number;
   metodePembayaran: string;
   createdAt: string;
   kasir: { id: number; username: string } | null;
+  produk?: { namaProduk: string } | null;
+};
+
+type TransaksiGroup = Omit<Transaksi, "pcs" | "pax" | "saus" | "namaProduk"> & {
+  items: Transaksi[];
 };
 
 function getComparisonRange(filter: FilterType, startValue: string, endValue: string) {
@@ -68,10 +75,16 @@ function getComparisonRange(filter: FilterType, startValue: string, endValue: st
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   start.setHours(0, 0, 0, 0);
   end.setHours(23, 59, 59, 999);
-  return null;
+  if (start > end) return null;
+  const duration = end.getTime() - start.getTime() + 1;
+  return {
+    start: new Date(start.getTime() - duration),
+    end: new Date(start.getTime() - 1),
+    label: "periode sebelumnya",
+  };
 }
 
-function sumTransactions(transactions: Transaksi[], start: Date, end: Date) {
+function sumTransactions(transactions: TransaksiGroup[], start: Date, end: Date) {
   return transactions.reduce((total, transaction) => {
     const date = new Date(transaction.createdAt);
     return date >= start && date <= end ? total + transaction.totalBayar : total;
@@ -86,8 +99,12 @@ export default function TenantDetailPage() {
   const [transaksiList, setTransaksiList] = useState<Transaksi[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("Hari Ini");
-  const [customStart, setCustomStart] = useState("2026-05-20");
-  const [customEnd, setCustomEnd] = useState("2026-05-24");
+  const [customStart, setCustomStart] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 6);
+    return date.toISOString().slice(0, 10);
+  });
+  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
     const fetchTenant = async () => {
@@ -125,13 +142,16 @@ export default function TenantDetailPage() {
 
   // Helper Hapus Transaksi Duplikat berdasarkan Invoice
   const uniqueTransaksi = useMemo(() => {
-    const map = new Map<string, Transaksi>();
+    const groups: TransaksiGroup[] = [];
     transaksiList.forEach((trx) => {
-      if (!map.has(trx.invoice)) {
-        map.set(trx.invoice, trx);
+      const group = groups.find((item) => item.invoice === trx.invoice);
+      if (group) {
+        group.items.push(trx);
+      } else {
+        groups.push({ ...trx, items: [trx] });
       }
     });
-    return Array.from(map.values());
+    return groups;
   }, [transaksiList]);
 
   // 1. Filter transaksi berdasarkan tanggal & waktu
@@ -351,13 +371,20 @@ export default function TenantDetailPage() {
             <input
               type="date"
               value={customStart}
-              onChange={(e) => setCustomStart(e.target.value)}
+              onChange={(e) => {
+                const nextStart = e.target.value;
+                setCustomStart(nextStart);
+                if (customEnd && nextStart > customEnd) {
+                  setCustomEnd(nextStart);
+                }
+              }}
               className="px-3 py-1.5 border border-zinc-200 rounded-lg text-zinc-700 font-medium outline-none focus:border-[#E52424]"
             />
             <span className="text-zinc-400">s/d</span>
             <input
               type="date"
               value={customEnd}
+              min={customStart || undefined}
               onChange={(e) => setCustomEnd(e.target.value)}
               className="px-3 py-1.5 border border-zinc-200 rounded-lg text-zinc-700 font-medium outline-none focus:border-[#E52424]"
             />
@@ -627,6 +654,62 @@ export default function TenantDetailPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* RIWAYAT TRANSAKSI */}
+      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold text-[#212121]">Riwayat Transaksi</h2>
+            <p className="text-[11px] text-zinc-400 mt-0.5">
+              Transaksi tenant pada periode {filter.toLowerCase()}
+            </p>
+          </div>
+          <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-500 shrink-0">
+            {filteredTransaksi.length} transaksi
+          </span>
+        </div>
+
+        {filteredTransaksi.length === 0 ? (
+          <p className="text-xs text-zinc-400 py-6 text-center">
+            Belum ada transaksi pada periode ini.
+          </p>
+        ) : (
+          <div className="divide-y divide-zinc-100">
+            {filteredTransaksi.map((trx) => (
+              <div key={trx.invoice} className="py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-[#212121] truncate">{trx.invoice}</p>
+                  <div className="mt-1 space-y-0.5">
+                    {trx.items.map((item) => (
+                      <p key={item.id} className="text-[11px] text-zinc-600 truncate">
+                        {item.produk?.namaProduk || item.namaProduk || "Produk"} · {item.pcs} pcs · {item.pax} pax
+                      </p>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+                    {new Date(trx.createdAt).toLocaleDateString("id-ID", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })} · {new Date(trx.createdAt).toLocaleTimeString("id-ID", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })} WIB · 
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs font-bold text-[#212121]">
+                    Rp {Number(trx.totalBayar).toLocaleString("id-ID")}
+                  </p>
+                  <span className="text-[10px] text-zinc-400 uppercase">
+                    {trx.metodePembayaran || "-"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

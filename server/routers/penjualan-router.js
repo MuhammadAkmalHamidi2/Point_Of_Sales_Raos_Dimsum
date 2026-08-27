@@ -7,10 +7,11 @@ const {
 
 // Pastikan menyamakan dengan nama file sebenarnya di folder middleware
 const verifyToken = require("../middlewares/verify-token"); 
+const verifyRole = require("../middlewares/verify-role");
 
 const router = express.Router();
 
-router.post("/checkout", verifyToken, checkoutTransaksi);
+router.post("/checkout", verifyToken, verifyRole(["kasir"]), checkoutTransaksi);
 router.get("/user/:userId", verifyToken, tampilPenjualanByUserId);
 router.get("/my-history", verifyToken, tampilPenjualanByUserId);
 router.get("/outlet/:outletId", verifyToken, tampilPenjualanByOutletId);

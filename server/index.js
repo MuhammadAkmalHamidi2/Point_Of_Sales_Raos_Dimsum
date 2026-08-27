@@ -13,6 +13,7 @@ const karyawanRoutes = require("./routers/karyawan-router");
 const outletRoutes = require("./routers/outlet-router");
 const absenRoutes = require("./routers/absen-router");
 const dashboardRoutes = require("./routers/dashboard-router");
+const analisaRoutes = require("./routers/analisa-router");
 
 const server = express();
 const PORT = process.env.PORT;
@@ -30,6 +31,7 @@ server.use("/api/karyawan", karyawanRoutes);
 server.use("/api/outlets", outletRoutes);
 server.use("/api/absen", absenRoutes);
 server.use("/api/dashboard", dashboardRoutes);
+server.use("/api/analisa", analisaRoutes);
 
 server.get("/", (req, res) => {
   res.json({

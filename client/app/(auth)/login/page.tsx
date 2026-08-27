@@ -38,6 +38,7 @@ export default function LoginPage() {
 
     localStorage.setItem("token", data.token);
     localStorage.setItem("role", data.role);
+    localStorage.removeItem("outletId");
     if (data.role === "admin") {
       router.push("/admin");
     } else if (data.role === "kasir") {

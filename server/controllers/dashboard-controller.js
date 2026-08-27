@@ -48,7 +48,7 @@ function getPeriod(filter, start, end) {
     unit = "month";
   } else if (filter === "Custom") {
     periodStart = startOfDay(start);
-    periodEnd = endOfDay(end);
+    periodEnd = endOfDay(end < periodStart ? periodStart : end);
   } else {
     throw new Error("Filter harus Harian, Mingguan, Bulanan, atau Custom.");
   }
