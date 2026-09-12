@@ -1,5 +1,16 @@
 const { Absen, User, Karyawan, Outlet } = require("../models");
 const { Op } = require("sequelize");
+const fs = require("fs");
+const path = require("path");
+
+// Helper untuk menghapus file jika validasi gagal/error
+const removeUploadedFile = (file) => {
+  if (file && file.path) {
+    fs.unlink(file.path, (err) => {
+      if (err) console.error("Gagal menghapus file temporer:", err.message);
+    });
+  }
+};
 
 const getJakartaDayRange = (dateValue = new Date()) => {
   const dateKey = new Intl.DateTimeFormat("en-CA", {
@@ -39,6 +50,7 @@ module.exports = {
       const tipe = req.body.tipe === "Keberangkatan" ? "Keberangkatan" : "Masuk";
       const { start: startOfDay, end: endOfDay } = getJakartaDayRange();
 
+      // Validasi: Jika tipe "Masuk", wajib absen "Keberangkatan" dulu hari ini
       if (tipe === "Masuk") {
         const departureAttendance = await Absen.findOne({
           where: {
@@ -49,6 +61,7 @@ module.exports = {
         });
 
         if (!departureAttendance) {
+          removeUploadedFile(req.file); // 👈 Hapus file upload
           return res.status(400).json({
             status: false,
             message: "Absensi keberangkatan harus dilakukan terlebih dahulu.",
@@ -56,6 +69,7 @@ module.exports = {
         }
       }
 
+      // Validasi: Cegah double absen untuk tipe yang sama di hari yang sama
       const existingAttendance = await Absen.findOne({
         where: {
           userId,
@@ -65,6 +79,7 @@ module.exports = {
       });
 
       if (existingAttendance) {
+        removeUploadedFile(req.file); // 👈 Hapus file upload
         return res.status(409).json({
           status: false,
           message: `Absensi ${tipe.toLowerCase()} hari ini sudah tercatat.`,
@@ -79,14 +94,15 @@ module.exports = {
         tipe,
       });
 
-      res.status(201).json({
+      return res.status(201).json({
         status: true,
         message: "Absensi berhasil disimpan",
         data: newAbsen,
       });
     } catch (error) {
-      console.log(error);
-      res.status(500).json({
+      removeUploadedFile(req.file); // 👈 Hapus file jika ada crash/error database
+      console.error("Error submitAbsen:", error);
+      return res.status(500).json({
         status: false,
         message: "Terjadi kesalahan pada server",
       });
@@ -102,14 +118,14 @@ module.exports = {
         order: [["createdAt", "DESC"]],
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         status: true,
         message: "Berhasil mengambil riwayat absensi",
         data: history,
       });
     } catch (error) {
-      console.log(error);
-      res.status(500).json({
+      console.error("Error getHistoryAbsen:", error);
+      return res.status(500).json({
         status: false,
         message: "Terjadi kesalahan pada server",
       });
@@ -140,15 +156,18 @@ module.exports = {
 
       const userIds = karyawanList
         .map((k) => k.account?.id)
-        .filter((id) => id !== undefined);
+        .filter((id) => id !== undefined && id !== null);
 
-      const absensiHariIni = await Absen.findAll({
-        where: {
-          userId: { [Op.in]: userIds },
-          createdAt: { [Op.between]: [startOfDay, endOfDay] },
-        },
-        order: [["createdAt", "ASC"]],
-      });
+      let absensiHariIni = [];
+      if (userIds.length > 0) {
+        absensiHariIni = await Absen.findAll({
+          where: {
+            userId: { [Op.in]: userIds },
+            createdAt: { [Op.between]: [startOfDay, endOfDay] },
+          },
+          order: [["createdAt", "ASC"]],
+        });
+      }
 
       const result = karyawanList.map((k) => {
         const records = absensiHariIni.filter((a) => a.userId === k.account?.id);
@@ -167,14 +186,14 @@ module.exports = {
         };
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         status: true,
         message: "Berhasil mengambil data absensi",
         data: result,
       });
     } catch (error) {
-      console.log(error);
-      res.status(500).json({
+      console.error("Error getAllAbsensi:", error);
+      return res.status(500).json({
         status: false,
         message: "Terjadi kesalahan pada server",
       });

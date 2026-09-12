@@ -27,6 +27,7 @@ fs
     );
   })
   .forEach(file => {
+    console.log("Memuat model:", file);
     const model = require(path.join(__dirname, file))(sequelize, Sequelize.DataTypes);
     db[model.name] = model;
   });

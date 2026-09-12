@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { api } from "@/lib/api";
 
 type PackageData = {
@@ -37,6 +37,8 @@ type AnalisaResponse = {
   days: DayData[];
 };
 
+const PACKAGE_COLORS = ["#E52424", "#F97316", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899"];
+
 export default function AnalisaPage() {
   const [activeTab, setActiveTab] = useState<"Saus" | "PCS">("Saus");
   const [analisa, setAnalisa] = useState<AnalisaResponse | null>(null);
@@ -46,6 +48,7 @@ export default function AnalisaPage() {
   useEffect(() => {
     const loadAnalisa = async () => {
       try {
+        setLoading(true);
         const response = await api.get("/api/analisa");
 
         if (response.data.success) {
@@ -61,109 +64,168 @@ export default function AnalisaPage() {
     loadAnalisa();
   }, []);
 
-  const selectedSummary =
-    selectedDay === "all"
-      ? analisa?.totals
-      : analisa?.days.find((day) => day.date === selectedDay);
+  // Filter Data Berdasarkan Hari / All
+  const selectedSummary = useMemo(() => {
+    if (selectedDay === "all") return analisa?.totals;
+    return analisa?.days.find((day) => day.date === selectedDay);
+  }, [selectedDay, analisa]);
 
-  const packageGroups = selectedSummary?.packages ?? [];
-  const packageData = packageGroups.flatMap((group) => group.packages);
-  const sauceData = selectedSummary?.sauces ?? [];
+  // Transform Data Packaging dengan categoryName yang meledat
+  const packageGroups = useMemo(() => selectedSummary?.packages ?? [], [selectedSummary]);
 
-  const maxSauceCount = Math.max(...sauceData.map((item) => item.count), 1);
-  const totalPax = packageData.reduce((total, item) => total + item.pax, 0);
-  const packageColors = ["#E52424", "#F97316", "#10B981", "#3B82F6", "#8B5CF6"];
-  const packageChart = packageData.reduce<
-    Array<PackageData & { color: string; start: number; end: number }>
-  >((result, item, index) => {
-    const percentage = totalPax ? (item.pax / totalPax) * 100 : 0;
-    const start = result.length ? result[result.length - 1].end : 0;
+  const packageData = useMemo(() => {
+    return packageGroups.flatMap((group) =>
+      group.packages.map((pkg) => ({
+        ...pkg,
+        categoryName: group.categoryName,
+      }))
+    );
+  }, [packageGroups]);
 
-    return [
-      ...result,
-      {
+  const sauceData = useMemo(() => selectedSummary?.sauces ?? [], [selectedSummary]);
+
+  // Calculators
+  const maxSauceCount = useMemo(() => Math.max(...sauceData.map((item) => item.count), 1), [sauceData]);
+  const totalPax = useMemo(() => packageData.reduce((total, item) => total + item.pax, 0), [packageData]);
+  const totalSaucePcs = useMemo(() => sauceData.reduce((total, item) => total + item.count, 0), [sauceData]);
+
+  // Chart Conic Gradient Calculation
+  const packageChart = useMemo(() => {
+    let currentAngle = 0;
+    return packageData.map((item, index) => {
+      const percentage = totalPax ? (item.pax / totalPax) * 100 : 0;
+      const start = currentAngle;
+      const end = currentAngle + percentage;
+      currentAngle = end;
+
+      return {
         ...item,
-        categoryName: packageGroups.find((group) => group.packages.includes(item))?.categoryName,
-        color: packageColors[index % packageColors.length],
+        color: PACKAGE_COLORS[index % PACKAGE_COLORS.length],
         start,
-        end: start + percentage,
-      },
-    ];
-  }, []);
-  const chartBackground = packageChart.length
-    ? `conic-gradient(${packageChart.map((item) => `${item.color} ${item.start}% ${item.end}%`).join(", ")})`
-    : "#e4e4e7";
+        end,
+        percentage,
+      };
+    });
+  }, [packageData, totalPax]);
+
+  const chartBackground = useMemo(() => {
+    if (!packageChart.length || totalPax === 0) return "#f4f4f5";
+    return `conic-gradient(${packageChart
+      .map((item) => `${item.color} ${item.start}% ${item.end}%`)
+      .join(", ")})`;
+  }, [packageChart, totalPax]);
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white p-4 md:p-5 rounded-2xl border border-zinc-200/80 shadow-2xs">
-        <h1 className="text-base md:text-xl font-bold text-[#212121]">
-          Analisa Penjualan
-        </h1>
-        <p className="text-xs text-zinc-400 mt-0.5">
-          Ringkasan packaging dan saus minggu ini
-        </p>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-zinc-200/80">
+    <div className="space-y-5 pb-10">
+      {/* HEADER PAGE */}
+      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-[#212121]">Periode analisa</p>
-          <p className="text-[11px] text-zinc-400">
-            {analisa ? `${analisa.startDate} sampai ${analisa.endDate}` : "Minggu ini"}
+          <h1 className="text-lg md:text-xl font-bold text-[#212121] tracking-tight">
+            Analisa Penjualan
+          </h1>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Laporan statistik penggunaan packaging dan distribusi saus
           </p>
         </div>
-        <select
-          value={selectedDay}
-          onChange={(event) => setSelectedDay(event.target.value)}
-          className="max-w-38 border border-zinc-200 rounded-xl px-3 py-2 text-xs font-medium text-zinc-600 outline-none"
-        >
-          <option value="all">Minggu ini</option>
-          {analisa?.days.map((day) => (
-            <option key={day.date} value={day.date}>{day.label}</option>
-          ))}
-        </select>
+
+        {/* PERIODE FILTER */}
+        <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200/80 p-1.5 pl-3 rounded-xl">
+          <div className="text-left">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Periode</p>
+            <p className="text-xs font-semibold text-zinc-700">
+              {analisa ? `${analisa.startDate} - ${analisa.endDate}` : "Minggu Ini"}
+            </p>
+          </div>
+          <select
+            value={selectedDay}
+            onChange={(event) => setSelectedDay(event.target.value)}
+            className="bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-700 outline-none focus:ring-1 focus:ring-zinc-400 shadow-2xs"
+          >
+            <option value="all">Semua Hari (Minggu Ini)</option>
+            {analisa?.days.map((day) => (
+              <option key={day.date} value={day.date}>
+                {day.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* METRIC SUMMARY CARDS */}
+      <div className="grid grid-cols-2 gap-3 md:gap-4">
+        <div className="bg-white p-4 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Total Outflow Packaging</span>
+          <p className="text-xl md:text-2xl font-black text-[#212121]">
+            {loading ? "..." : `${totalPax.toLocaleString("id-ID")} Pax`}
+          </p>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Total Keluar Saus</span>
+          <p className="text-xl md:text-2xl font-black text-[#212121]">
+            {loading ? "..." : `${totalSaucePcs.toLocaleString("id-ID")} Pcs`}
+          </p>
+        </div>
       </div>
 
       {/* MOBILE SWITCHER */}
-      <div className="flex md:hidden bg-white p-1 rounded-2xl border border-zinc-200/80">
+      <div className="flex md:hidden bg-zinc-100 p-1 rounded-xl border border-zinc-200">
         <button
           onClick={() => setActiveTab("Saus")}
-          className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
-            activeTab === "Saus" ? "bg-[#E52424] text-white" : "text-zinc-500"
-          }`}
+          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === "Saus" ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+            }`}
         >
-          Saus
+          Distribusi Saus
         </button>
         <button
           onClick={() => setActiveTab("PCS")}
-          className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
-            activeTab === "PCS" ? "bg-[#E52424] text-white" : "text-zinc-500"
-          }`}
+          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === "PCS" ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+            }`}
         >
-          PCS
+          Packaging (Pax)
         </button>
       </div>
 
       {/* 2-COLUMN GRID ON DESKTOP */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
         {/* SAUS SECTION */}
         <div
-          className={`bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4 ${activeTab === "Saus" ? "block" : "hidden md:block"}`}
+          className={`bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4 ${activeTab === "Saus" ? "block" : "hidden md:block"
+            }`}
         >
-          <div>
+          <div className="border-b border-zinc-100 pb-3">
             <h2 className="text-sm font-bold text-[#212121]">Jumlah Keluar Saus</h2>
-            <p className="text-[11px] text-zinc-400 mt-0.5">Total pcs saus</p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">Statistik pemakaian opsi saus</p>
           </div>
-          {loading ? <p className="text-sm text-zinc-400">Memuat data...</p> : (
-            <div className="space-y-4 pt-2">
-              {sauceData.map((sauce) => (
-                <div key={sauce.name} className="space-y-1.5">
+
+          {loading ? (
+            <div className="space-y-4 py-2">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="space-y-2 animate-pulse">
+                  <div className="h-3 bg-zinc-100 rounded w-1/3" />
+                  <div className="h-3 bg-zinc-100 rounded-full w-full" />
+                </div>
+              ))}
+            </div>
+          ) : sauceData.length === 0 ? (
+            <div className="py-8 text-center text-xs text-zinc-400 italic">
+              Tidak ada data saus tercatat.
+            </div>
+          ) : (
+            <div className="space-y-4 pt-1">
+              {sauceData.map((sauce, idx) => (
+                <div key={`${sauce.name}-${idx}`} className="space-y-1.5">
                   <div className="flex justify-between text-xs">
-                    <span className="font-semibold text-zinc-600">{sauce.name}</span>
-                    <span className="font-bold text-[#212121]">{sauce.count.toLocaleString("id-ID")} pcs</span>
+                    <span className="font-semibold text-zinc-700">{sauce.name}</span>
+                    <span className="font-bold text-[#212121]">
+                      {sauce.count.toLocaleString("id-ID")} pcs
+                    </span>
                   </div>
-                  <div className="w-full bg-zinc-100 h-3 rounded-full overflow-hidden">
-                    <div className="bg-[#E52424] h-full rounded-full transition-all" style={{ width: `${(sauce.count / maxSauceCount) * 100}%` }} />
+                  <div className="w-full bg-zinc-100 h-2.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-[#E52424] h-full rounded-full transition-all duration-500"
+                      style={{ width: `${(sauce.count / maxSauceCount) * 100}%` }}
+                    />
                   </div>
                 </div>
               ))}
@@ -171,43 +233,82 @@ export default function AnalisaPage() {
           )}
         </div>
 
-        {/* PCS SECTION */}
+        {/* PCS / PACKAGING SECTION */}
         <div
-          className={`bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4 ${activeTab === "PCS" ? "block" : "hidden md:block"}`}
+          className={`bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4 ${activeTab === "PCS" ? "block" : "hidden md:block"
+            }`}
         >
-          <div>
-            <h2 className="text-sm font-bold text-[#212121]">Jumlah Keluar Packaging</h2>
-            <p className="text-[11px] text-zinc-400 mt-0.5">Total packaging dalam pax</p>
+          <div className="border-b border-zinc-100 pb-3">
+            <h2 className="text-sm font-bold text-[#212121]">Penggunaan Packaging</h2>
+            <p className="text-[11px] text-zinc-400 mt-0.5">Proporsi kemasan berdasarkan kuintal/pax</p>
           </div>
-          {loading ? <p className="text-sm text-zinc-400">Memuat data...</p> : (
-            <div className="space-y-5 py-2">
+
+          {loading ? (
+            <div className="space-y-4 py-2 animate-pulse">
               <div className="flex items-center gap-5">
-                <div className="relative w-32 h-32 shrink-0 rounded-full flex items-center justify-center" style={{ background: chartBackground }}>
-                  <div className="w-20 h-20 bg-white rounded-full flex flex-col items-center justify-center">
-                    <span className="text-lg font-bold text-[#212121]">{packageData.reduce((total, item) => total + item.pax, 0)}</span>
-                    <span className="text-[10px] text-zinc-400">total pax</span>
+                <div className="w-28 h-28 bg-zinc-100 rounded-full shrink-0" />
+                <div className="space-y-2 w-full">
+                  <div className="h-3 bg-zinc-100 rounded w-3/4" />
+                  <div className="h-3 bg-zinc-100 rounded w-1/2" />
+                </div>
+              </div>
+            </div>
+          ) : packageData.length === 0 ? (
+            <div className="py-8 text-center text-xs text-zinc-400 italic">
+              Tidak ada data packaging tercatat.
+            </div>
+          ) : (
+            <div className="space-y-6 pt-1">
+              {/* DONUT CHART & LEGEND */}
+              <div className="flex items-center gap-5">
+                <div
+                  className="relative w-28 h-28 shrink-0 rounded-full flex items-center justify-center transition-all shadow-2xs"
+                  style={{ background: chartBackground }}
+                >
+                  <div className="w-18 h-18 bg-white rounded-full flex flex-col items-center justify-center border border-zinc-100">
+                    <span className="text-base font-bold text-[#212121] leading-none">
+                      {totalPax}
+                    </span>
+                    <span className="text-[9px] font-medium text-zinc-400 mt-0.5">total pax</span>
                   </div>
                 </div>
-                <div className="space-y-2 text-xs">
-                  {packageChart.map((item) => (
-                    <div key={item.qty} className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                      <span className="text-zinc-600">{item.categoryName} · {item.qty} pcs</span>
+
+                <div className="space-y-1.5 text-xs max-h-36 overflow-y-auto pr-1">
+                  {packageChart.map((item, idx) => (
+                    <div
+                      key={`${item.categoryName}-${item.qty}-${idx}`}
+                      className="flex items-center gap-2"
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="text-zinc-600 truncate max-w-[150px]">
+                        {item.categoryName} ({item.qty} pcs)
+                      </span>
+                      <span className="font-bold text-zinc-800 ml-auto">
+                        {item.percentage.toFixed(0)}%
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="space-y-4">
+
+              {/* BREAKDOWN BY CATEGORY */}
+              <div className="space-y-4 pt-2 border-t border-zinc-100">
                 {packageGroups.map((group) => (
-                  <div key={group.categoryName}>
-                    <h3 className="text-sm font-bold text-[#212121]">
+                  <div key={group.categoryName} className="space-y-2">
+                    <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-wider">
                       {group.categoryName}
                     </h3>
-                    <div className="grid grid-cols-3 gap-3 mt-2">
-                      {group.packages.map((item) => (
-                        <div key={`${group.categoryName}-${item.qty}`} className="bg-zinc-50 p-3 rounded-xl border border-zinc-100 text-center">
-                          <p className="text-xs font-medium text-zinc-500">{item.qty} pcs</p>
-                          <p className="text-sm font-bold text-[#212121] mt-1">{item.pax} pax</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {group.packages.map((item, idx) => (
+                        <div
+                          key={`${group.categoryName}-${item.qty}-${idx}`}
+                          className="bg-zinc-50/80 p-2.5 rounded-xl border border-zinc-200/60 text-center"
+                        >
+                          <p className="text-[11px] font-medium text-zinc-500">{item.qty} pcs</p>
+                          <p className="text-xs font-bold text-[#212121] mt-0.5">{item.pax} pax</p>
                         </div>
                       ))}
                     </div>
@@ -217,6 +318,7 @@ export default function AnalisaPage() {
             </div>
           )}
         </div>
+
       </div>
     </div>
   );

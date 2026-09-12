@@ -6,7 +6,8 @@ import axios from "axios";
 
 import KasirHeader from "@/components/kasir/KasirHeader";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:2000";
 
 type Topping = {
   id: number;
@@ -66,39 +67,164 @@ export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
 
-  const productId = params.produk as string;
+  const productId = Array.isArray(params?.produk)
+    ? params.produk[0]
+    : params?.produk;
 
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Array ID saus yang urutannya mencerminkan urutan waktu klik
   const [selectedSauces, setSelectedSauces] = useState<number[]>([]);
-  const [selectedPcsOption, setSelectedPcsOption] = useState<HargaProduk | null>(null);
-  const [pax, setPax] = useState(1);
+  const [selectedPcsOption, setSelectedPcsOption] =
+    useState<HargaProduk | null>(null);
 
+  const [pax, setPax] = useState(1);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  // =========================================================
+  // GET PRODUCT DETAIL
+  // =========================================================
 
   const getProductDetail = async () => {
     try {
       setLoading(true);
 
-      const response = await axios.get<{ success: boolean; data: Product }>(
-        `${API_URL}/api/products/detail/${productId}`
+      // Ambil token dari localStorage
+      const token =
+        localStorage.getItem("token") ||
+        localStorage.getItem("accessToken") ||
+        localStorage.getItem("access_token");
+
+      console.log("========================================");
+      console.log("GET PRODUCT DETAIL");
+      console.log("========================================");
+      console.log("API URL:", API_URL);
+      console.log("Product ID:", productId);
+      console.log("Token tersedia:", !!token);
+      console.log(
+        "Token:",
+        token ? `${token.substring(0, 20)}...` : "TIDAK ADA"
       );
+
+      if (!token) {
+        console.error("❌ TOKEN TIDAK DITEMUKAN");
+
+        alert("Session login tidak ditemukan. Silakan login kembali.");
+
+        localStorage.removeItem("token");
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("access_token");
+
+        router.push("/login");
+        return;
+      }
+
+      const requestUrl =
+        `${API_URL}/api/products/detail/${productId}`;
+
+      console.log("Request URL:", requestUrl);
+
+      const response = await axios.get<{
+        success: boolean;
+        data: Product;
+        message?: string;
+      }>(requestUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      console.log("PRODUCT DETAIL RESPONSE:", response.data);
 
       if (response.data.success) {
         const data = response.data.data;
+
+        console.log("PRODUCT DATA:", data);
+        console.log("TOPPINGS:", data.toppings);
+        console.log("HARGA PRODUK:", data.hargaproduks);
+
         setProduct(data);
 
-        if (data.hargaproduks && data.hargaproduks.length > 0) {
-          const sortedHarga = [...data.hargaproduks].sort((a, b) => a.qty - b.qty);
+        if (
+          data.hargaproduks &&
+          data.hargaproduks.length > 0
+        ) {
+          const sortedHarga = [...data.hargaproduks].sort(
+            (a, b) => a.qty - b.qty
+          );
+
+          console.log(
+            "DEFAULT PCS OPTION:",
+            sortedHarga[0]
+          );
+
           setSelectedPcsOption(sortedHarga[0]);
         }
       } else {
+        console.error(
+          "❌ API mengembalikan success=false:",
+          response.data
+        );
+
         setProduct(null);
       }
     } catch (error) {
-      console.error("GET PRODUCT DETAIL ERROR:", error);
+      console.error("========================================");
+      console.error("GET PRODUCT DETAIL ERROR");
+      console.error("========================================");
+
+      if (axios.isAxiosError(error)) {
+        console.error("Status:", error.response?.status);
+        console.error(
+          "Response:",
+          error.response?.data
+        );
+        console.error(
+          "Request URL:",
+          error.config?.url
+        );
+        console.error(
+          "Request Method:",
+          error.config?.method
+        );
+        console.error(
+          "Request Headers:",
+          error.config?.headers
+        );
+
+        if (error.response?.status === 401) {
+          console.error(
+            "❌ 401 UNAUTHORIZED: TOKEN DITOLAK BACKEND"
+          );
+
+          localStorage.removeItem("token");
+          localStorage.removeItem("accessToken");
+          localStorage.removeItem("access_token");
+
+          alert(
+            "Session login sudah tidak valid. Silakan login kembali."
+          );
+
+          router.push("/login");
+          return;
+        }
+
+        if (error.response?.status === 403) {
+          console.error(
+            "❌ 403 FORBIDDEN: USER TIDAK MEMILIKI AKSES"
+          );
+        }
+
+        if (error.response?.status === 404) {
+          console.error(
+            "❌ 404 NOT FOUND: PRODUK ATAU ENDPOINT TIDAK DITEMUKAN"
+          );
+        }
+      } else {
+        console.error("Unknown error:", error);
+      }
+
       setProduct(null);
     } finally {
       setLoading(false);
@@ -111,117 +237,219 @@ export default function ProductDetailPage() {
     }
   }, [productId]);
 
+  // =========================================================
+  // PRICE CALCULATION
+  // =========================================================
+
   const basePrice = selectedPcsOption
     ? Number(selectedPcsOption.harga)
     : product
       ? Number(product.harga)
       : 0;
 
-  // PERBAIKAN: Petakan dari selectedSauces agar urutan objek persis sesuai riwayat klik
   const selectedSauceObjects = selectedSauces
-    .map((id) => (product?.toppings || []).find((s) => s.id === id))
-    .filter((s): s is Topping => Boolean(s));
+    .map((id) =>
+      (product?.toppings || []).find(
+        (sauce) => sauce.id === id
+      )
+    )
+    .filter(
+      (sauce): sauce is Topping => Boolean(sauce)
+    );
 
-  const totalPcs = selectedPcsOption ? selectedPcsOption.qty : 0;
+  const totalPcs = selectedPcsOption
+    ? selectedPcsOption.qty
+    : 0;
+
   const numSauces = selectedSauceObjects.length;
 
   const totalSaucePricePerPax =
     numSauces > 0 && totalPcs > 0
-      ? selectedSauceObjects.reduce((acc, sauce) => {
-        const pcsPerSauce = totalPcs / numSauces;
-        return acc + Number(sauce.harga) * pcsPerSauce;
-      }, 0)
+      ? selectedSauceObjects.reduce(
+        (acc, sauce) => {
+          const pcsPerSauce =
+            totalPcs / numSauces;
+
+          return (
+            acc +
+            Number(sauce.harga) *
+            pcsPerSauce
+          );
+        },
+        0
+      )
       : 0;
 
-  const unitPricePerPax = basePrice + totalSaucePricePerPax;
-  const total = unitPricePerPax * pax;
+  const unitPricePerPax =
+    basePrice + totalSaucePricePerPax;
+
+  const total =
+    unitPricePerPax * pax;
+
+  // =========================================================
+  // TOGGLE SAUCE
+  // =========================================================
 
   const toggleSauce = (sauceId: number) => {
     setSelectedSauces((current) => {
       if (current.includes(sauceId)) {
-        return current.filter((id) => id !== sauceId);
+        return current.filter(
+          (id) => id !== sauceId
+        );
       }
+
       return [...current, sauceId];
     });
   };
 
-  const handleAddToCart = () => {
-    if (!product || !selectedPcsOption) return;
+  // =========================================================
+  // ADD TO CART
+  // =========================================================
 
-    const existingCart = localStorage.getItem("kasir-cart");
+  const handleAddToCart = () => {
+    if (!product || !selectedPcsOption) {
+      console.error(
+        "❌ Produk atau pilihan PCS belum tersedia"
+      );
+      return;
+    }
+
+    const existingCart =
+      localStorage.getItem("kasir-cart");
+
     let cart: CartItem[] = [];
 
     if (existingCart) {
       try {
-        const parsedCart = JSON.parse(existingCart);
-        if (Array.isArray(parsedCart)) cart = parsedCart;
-      } catch {
+        const parsedCart =
+          JSON.parse(existingCart);
+
+        if (Array.isArray(parsedCart)) {
+          cart = parsedCart;
+        }
+      } catch (error) {
+        console.error(
+          "❌ Gagal parse kasir-cart:",
+          error
+        );
+
         cart = [];
       }
     }
 
-    // --- LOGIKA PEMBAGIAN SAUS AUTOMATIS (SESUAI URUTAN KLIK) ---
-    const totalPcsOrder = selectedPcsOption.qty * pax;
+    const totalPcsOrder =
+      selectedPcsOption.qty * pax;
+
     let sauceDetails: SauceDetail[] = [];
 
     if (numSauces > 0) {
-      const baseQtyPerSauce = Math.floor(totalPcsOrder / numSauces);
-      const remainder = totalPcsOrder % numSauces;
+      const baseQtyPerSauce = Math.floor(
+        totalPcsOrder / numSauces
+      );
 
-      sauceDetails = selectedSauceObjects.map((sauce, index) => ({
-        namaSaus: sauce.namaTopping,
-        qty: baseQtyPerSauce + (index < remainder ? 1 : 0),
-      }));
+      const remainder =
+        totalPcsOrder % numSauces;
+
+      sauceDetails =
+        selectedSauceObjects.map(
+          (sauce, index) => ({
+            namaSaus:
+              sauce.namaTopping,
+            qty:
+              baseQtyPerSauce +
+              (index < remainder ? 1 : 0),
+          })
+        );
     }
 
     const sauceNames =
       selectedSauceObjects.length > 0
-        ? selectedSauceObjects.map((option) => option.namaTopping)
+        ? selectedSauceObjects.map(
+          (option) =>
+            option.namaTopping
+        )
         : ["original"];
 
-    // PERBAIKAN: Gunakan urutan klik langsung sebagai kunci identitas keranjang
-    const sauceKey = selectedSauces.length > 0 ? selectedSauces.join("-") : "original";
-    const cartItemId = `${product.id}-${sauceKey}-${selectedPcsOption.qty}`;
+    const sauceKey =
+      selectedSauces.length > 0
+        ? selectedSauces.join("-")
+        : "original";
+
+    const cartItemId =
+      `${product.id}-${sauceKey}-${selectedPcsOption.qty}`;
 
     const newItem: CartItem = {
       id: cartItemId,
       productId: product.id,
       name: product.namaProduk,
       price: unitPricePerPax,
-      saucePrice: totalSaucePricePerPax,
+      saucePrice:
+        totalSaucePricePerPax,
       pcs: selectedPcsOption.qty,
-      pax: pax,
+      pax,
       sauce: sauceNames,
-      sauceDetails: sauceDetails,
+      sauceDetails,
       image: product.produkImg,
       quantity: pax,
     };
 
-    const existingIndex = cart.findIndex((item) => item.id === cartItemId);
+    const existingIndex =
+      cart.findIndex(
+        (item) =>
+          item.id === cartItemId
+      );
 
     if (existingIndex !== -1) {
       cart[existingIndex].pax += pax;
-      cart[existingIndex].quantity += pax;
 
-      // Akumulasi qty saus jika item sejenis ditambahkan lagi
-      cart[existingIndex].sauceDetails = cart[existingIndex].sauceDetails.map((s, idx) => ({
-        ...s,
-        qty: s.qty + sauceDetails[idx].qty,
-      }));
+      cart[existingIndex].quantity +=
+        pax;
+
+      cart[existingIndex].sauceDetails =
+        cart[existingIndex].sauceDetails.map(
+          (s, idx) => ({
+            ...s,
+            qty:
+              s.qty +
+              (sauceDetails[idx]?.qty || 0),
+          })
+        );
     } else {
       cart.push(newItem);
     }
 
-    localStorage.setItem("kasir-cart", JSON.stringify(cart));
-    window.dispatchEvent(new Event("cart-updated"));
+    localStorage.setItem(
+      "kasir-cart",
+      JSON.stringify(cart)
+    );
+
+    window.dispatchEvent(
+      new Event("cart-updated")
+    );
+
+    console.log(
+      "========================================"
+    );
+    console.log("ADD TO CART SUCCESS");
+    console.log("========================================");
+    console.log("Cart Item:", newItem);
+    console.log("Cart:", cart);
 
     setShowSuccessModal(true);
   };
 
+  // =========================================================
+  // LOADING
+  // =========================================================
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#F5F5F5]">
-        <KasirHeader title="Produk" showBack />
+        <KasirHeader
+          title="Produk"
+          showBack
+        />
+
         <div className="w-full max-w-md sm:max-w-xl lg:max-w-2xl mx-auto p-5">
           <div className="h-56 bg-zinc-200 rounded-xl animate-pulse" />
         </div>
@@ -229,12 +457,22 @@ export default function ProductDetailPage() {
     );
   }
 
+  // =========================================================
+  // PRODUCT NOT FOUND
+  // =========================================================
+
   if (!product) {
     return (
       <main className="min-h-screen bg-[#F5F5F5] flex items-center justify-center px-4">
         <div className="text-center">
-          <div className="text-6xl mb-4">🥟</div>
-          <h2 className="text-lg font-bold text-[#212121]">Produk tidak ditemukan</h2>
+          <div className="text-6xl mb-4">
+            🥟
+          </div>
+
+          <h2 className="text-lg font-bold text-[#212121]">
+            Produk tidak ditemukan
+          </h2>
+
           <button
             type="button"
             onClick={() => router.back()}
@@ -247,14 +485,26 @@ export default function ProductDetailPage() {
     );
   }
 
-  const toppings = product.toppings || [];
-  const hargaproduks = product.hargaproduks || [];
+  const toppings =
+    product.toppings || [];
+
+  const hargaproduks =
+    product.hargaproduks || [];
+
+  // =========================================================
+  // UI
+  // =========================================================
 
   return (
     <main className="min-h-screen bg-[#F5F5F5] pb-28">
-      <KasirHeader title={product.namaProduk} showBack />
+      <KasirHeader
+        title={product.namaProduk}
+        showBack
+      />
 
       <div className="w-full max-w-md sm:max-w-xl lg:max-w-2xl mx-auto">
+
+        {/* IMAGE */}
         <div className="h-56 sm:h-64 bg-white flex items-center justify-center border-b border-zinc-200 overflow-hidden">
           {product.produkImg ? (
             <img
@@ -263,37 +513,59 @@ export default function ProductDetailPage() {
               className="w-full h-full object-cover"
             />
           ) : (
-            <div className="text-8xl sm:text-9xl">🥟</div>
+            <div className="text-8xl sm:text-9xl">
+              🥟
+            </div>
           )}
         </div>
 
+        {/* CONTENT */}
         <div className="px-4 sm:px-6 py-5">
+
+          {/* PRODUCT INFO */}
           <div className="mb-7">
             <div className="flex items-start justify-between gap-3">
               <h2 className="text-xl sm:text-2xl font-bold text-[#212121]">
                 {product.namaProduk}
               </h2>
+
               <span className="shrink-0 px-2.5 py-1 rounded-md bg-[#35A853]/10 text-[#35A853] text-[10px] font-semibold">
                 Tersedia
               </span>
             </div>
+
             <p className="text-xs sm:text-sm leading-5 text-zinc-500 mt-3">
-              {product.keterangan || "Tidak ada keterangan produk."}
+              {product.keterangan ||
+                "Tidak ada keterangan produk."}
             </p>
           </div>
 
+          {/* SAUCE */}
           <section className="mb-7">
             <div className="flex items-end justify-between mb-3">
               <div>
-                <h3 className="text-sm font-semibold text-[#212121]">Pilih Saus</h3>
-                <p className="text-[10px] text-zinc-400 mt-1">Pilih satu atau lebih saus (opsional)</p>
+                <h3 className="text-sm font-semibold text-[#212121]">
+                  Pilih Saus
+                </h3>
+
+                <p className="text-[10px] text-zinc-400 mt-1">
+                  Pilih satu atau lebih saus
+                  (opsional)
+                </p>
               </div>
-              <span className="text-[10px] font-medium text-zinc-400">Opsional</span>
+
+              <span className="text-[10px] font-medium text-zinc-400">
+                Opsional
+              </span>
             </div>
 
             <div className="space-y-2">
               {toppings.map((sauce) => {
-                const isSelected = selectedSauces.includes(sauce.id);
+                const isSelected =
+                  selectedSauces.includes(
+                    sauce.id
+                  );
+
                 return (
                   <label
                     key={sauce.id}
@@ -305,18 +577,32 @@ export default function ProductDetailPage() {
                     <input
                       type="checkbox"
                       checked={isSelected}
-                      onChange={() => toggleSauce(sauce.id)}
+                      onChange={() =>
+                        toggleSauce(
+                          sauce.id
+                        )
+                      }
                       className="w-5 h-5 shrink-0 accent-[#E52424] cursor-pointer"
                     />
+
                     <div className="flex-1 flex items-center justify-between">
                       <span
-                        className={`text-xs sm:text-sm font-medium ${isSelected ? "text-[#E52424]" : "text-zinc-700"
+                        className={`text-xs sm:text-sm font-medium ${isSelected
+                            ? "text-[#E52424]"
+                            : "text-zinc-700"
                           }`}
                       >
-                        {sauce.namaTopping}
+                        {
+                          sauce.namaTopping
+                        }
                       </span>
+
                       <span className="text-xs text-zinc-400">
-                        +{formatRupiah(sauce.harga)}/pcs
+                        +
+                        {formatRupiah(
+                          sauce.harga
+                        )}
+                        /pcs
                       </span>
                     </div>
                   </label>
@@ -327,38 +613,76 @@ export default function ProductDetailPage() {
             <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-3">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wide">
-                  Saus dipilih ({selectedSauces.length})
+                  Saus dipilih (
+                  {
+                    selectedSauces.length
+                  }
+                  )
                 </span>
+
                 <span className="text-[10px] font-semibold text-[#E52424]">
-                  Biaya Saus: +{formatRupiah(totalSaucePricePerPax)} / pax
+                  Biaya Saus: +
+                  {formatRupiah(
+                    totalSaucePricePerPax
+                  )}{" "}
+                  / pax
                 </span>
               </div>
-              {selectedSauces.length > 0 ? (
+
+              {selectedSauces.length >
+                0 ? (
                 <p className="text-xs font-semibold text-[#212121] leading-5">
-                  {selectedSauceObjects.map((s) => s.namaTopping).join(" + ")}
+                  {selectedSauceObjects
+                    .map(
+                      (s) =>
+                        s.namaTopping
+                    )
+                    .join(" + ")}
                 </p>
               ) : (
-                <p className="text-xs font-medium text-zinc-500">Original (Tanpa Saus)</p>
+                <p className="text-xs font-medium text-zinc-500">
+                  Original (Tanpa Saus)
+                </p>
               )}
             </div>
           </section>
 
+          {/* PAX */}
           <section className="mb-7">
-            <h3 className="text-sm font-semibold text-[#212121] mb-3">Berapa Pax?</h3>
+            <h3 className="text-sm font-semibold text-[#212121] mb-3">
+              Berapa Pax?
+            </h3>
+
             <div className="flex items-center justify-between bg-white border border-zinc-200 rounded-xl p-2">
               <button
                 type="button"
-                onClick={() => setPax(Math.max(1, pax - 1))}
+                onClick={() =>
+                  setPax(
+                    Math.max(
+                      1,
+                      pax - 1
+                    )
+                  )
+                }
                 className="w-10 h-10 rounded-lg bg-[#F5F5F5] text-[#212121] font-bold hover:bg-zinc-200 active:scale-95 transition"
               >
                 −
               </button>
+
               <div className="text-center">
-                <span className="text-sm font-bold text-[#212121]">{pax} Pax</span>
+                <span className="text-sm font-bold text-[#212121]">
+                  {pax} Pax
+                </span>
               </div>
+
               <button
                 type="button"
-                onClick={() => setPax((current) => current + 1)}
+                onClick={() =>
+                  setPax(
+                    (current) =>
+                      current + 1
+                  )
+                }
                 className="w-10 h-10 rounded-lg bg-[#E52424] text-white font-bold hover:bg-[#D91F1F] active:scale-95 transition"
               >
                 +
@@ -366,51 +690,84 @@ export default function ProductDetailPage() {
             </div>
           </section>
 
+          {/* PCS */}
           <section>
-            <h3 className="text-sm font-semibold text-[#212121] mb-3">Berapa PCS?</h3>
+            <h3 className="text-sm font-semibold text-[#212121] mb-3">
+              Berapa PCS?
+            </h3>
+
             <div className="grid grid-cols-3 gap-2">
-              {hargaproduks.map((opt) => {
-                const isSelected = selectedPcsOption?.id === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setSelectedPcsOption(opt)}
-                    className={`h-14 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-[0.98] ${isSelected
-                        ? "border-[#E52424] bg-[#E52424] text-white"
-                        : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
-                      }`}
-                  >
-                    <span className="text-xs font-bold">{opt.qty} PCS</span>
-                    <span
-                      className={`text-[10px] ${isSelected ? "text-white/80" : "text-zinc-400"
+              {hargaproduks.map(
+                (opt) => {
+                  const isSelected =
+                    selectedPcsOption?.id ===
+                    opt.id;
+
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedPcsOption(
+                          opt
+                        )
+                      }
+                      className={`h-14 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-[0.98] ${isSelected
+                          ? "border-[#E52424] bg-[#E52424] text-white"
+                          : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
                         }`}
                     >
-                      {formatRupiah(opt.harga)}
-                    </span>
-                  </button>
-                );
-              })}
+                      <span className="text-xs font-bold">
+                        {opt.qty} PCS
+                      </span>
+
+                      <span
+                        className={`text-[10px] ${isSelected
+                            ? "text-white/80"
+                            : "text-zinc-400"
+                          }`}
+                      >
+                        {formatRupiah(
+                          opt.harga
+                        )}
+                      </span>
+                    </button>
+                  );
+                }
+              )}
             </div>
           </section>
         </div>
       </div>
 
+      {/* BOTTOM TOTAL */}
       <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-zinc-200 p-3 sm:p-4 z-40">
         <div className="w-full max-w-md sm:max-w-xl lg:max-w-2xl mx-auto flex items-center gap-3">
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] sm:text-xs text-zinc-400">Total Harga</p>
+            <p className="text-[10px] sm:text-xs text-zinc-400">
+              Total Harga
+            </p>
+
             <p className="font-bold text-sm sm:text-base truncate text-[#E52424]">
               {formatRupiah(total)}
             </p>
+
             <p className="text-[10px] text-zinc-400 truncate">
-              Dimsum ({formatRupiah(basePrice)}) + Saus ({formatRupiah(totalSaucePricePerPax)})
+              Dimsum (
+              {formatRupiah(
+                basePrice
+              )}) + Saus (
+              {formatRupiah(
+                totalSaucePricePerPax
+              )})
             </p>
           </div>
 
           <button
             type="button"
-            onClick={handleAddToCart}
+            onClick={
+              handleAddToCart
+            }
             className="shrink-0 h-11 px-4 sm:px-6 rounded-xl bg-[#E52424] text-white text-xs sm:text-sm font-semibold hover:bg-[#D91F1F] active:scale-[0.98] transition"
           >
             Tambah ke Keranjang
@@ -418,58 +775,106 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
+      {/* SUCCESS MODAL */}
       {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-xl">
+
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#35A853]/10 text-[#35A853] text-2xl mb-3">
               ✓
             </div>
-            <h3 className="text-base font-bold text-[#212121]">Berhasil Ditambahkan!</h3>
+
+            <h3 className="text-base font-bold text-[#212121]">
+              Berhasil Ditambahkan!
+            </h3>
+
             <p className="mt-1 text-xs text-zinc-500">
-              {product.namaProduk} telah masuk ke keranjang belanja.
+              {
+                product.namaProduk
+              }{" "}
+              telah masuk ke keranjang belanja.
             </p>
 
             <div className="mt-4 rounded-xl bg-[#F5F5F5] p-3 text-left text-xs space-y-1.5 text-zinc-600 border border-zinc-200">
+
               <div className="flex justify-between">
                 <span>Pax:</span>
-                <span className="font-semibold text-[#212121]">{pax} Pax</span>
+
+                <span className="font-semibold text-[#212121]">
+                  {pax} Pax
+                </span>
               </div>
+
               <div className="flex justify-between">
-                <span>Ukuran (PCS):</span>
-                <span className="font-semibold text-[#212121]">{selectedPcsOption?.qty} PCS</span>
+                <span>
+                  Ukuran (PCS):
+                </span>
+
+                <span className="font-semibold text-[#212121]">
+                  {
+                    selectedPcsOption?.qty
+                  }{" "}
+                  PCS
+                </span>
               </div>
+
               <div className="flex justify-between">
                 <span>Saus:</span>
+
                 <span className="font-semibold text-[#212121]">
-                  {selectedSauceObjects.length > 0
-                    ? selectedSauceObjects.map((s) => s.namaTopping).join(", ")
+                  {selectedSauceObjects.length >
+                    0
+                    ? selectedSauceObjects
+                      .map(
+                        (s) =>
+                          s.namaTopping
+                      )
+                      .join(", ")
                     : "Original"}
                 </span>
               </div>
+
               <div className="flex justify-between border-t border-zinc-200 pt-1.5 font-bold text-[#212121]">
-                <span>Total Biaya:</span>
-                <span className="text-[#E52424]">{formatRupiah(total)}</span>
+                <span>
+                  Total Biaya:
+                </span>
+
+                <span className="text-[#E52424]">
+                  {formatRupiah(total)}
+                </span>
               </div>
             </div>
 
             <div className="mt-5 flex gap-2">
+
               <button
                 type="button"
-                onClick={() => setShowSuccessModal(false)}
+                onClick={() =>
+                  setShowSuccessModal(
+                    false
+                  )
+                }
                 className="flex-1 py-2.5 rounded-xl border border-zinc-200 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 active:scale-95 transition"
               >
                 Kembali
               </button>
+
               <button
                 type="button"
                 onClick={() => {
-                  setShowSuccessModal(false);
-                  router.push("/kasir/keranjang");
+                  setShowSuccessModal(
+                    false
+                  );
+
+                  router.push(
+                    "/kasir/keranjang"
+                  );
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-[#E52424] text-xs font-semibold text-white hover:bg-[#D91F1F] active:scale-95 transition"
               >
                 Lihat Keranjang
               </button>
+
             </div>
           </div>
         </div>

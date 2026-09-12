@@ -1,46 +1,85 @@
 'use strict';
+
 const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
-  class produk extends Model {
+  class Produk extends Model {
     static associate(models) {
-      // Relasi Kategori
-      produk.belongsTo(models.category, {
-        foreignKey: 'categoryId',
-        as: 'category',
-      });
+      // Relasi Category
+      const CategoryModel = models.category || models.Category;
+      if (CategoryModel) {
+        Produk.belongsTo(CategoryModel, {
+          foreignKey: 'categoryId',
+          as: 'category',
+        });
+      }
 
-      // Relasi Saus / Topping
-      produk.hasMany(models.topping, {
-        foreignKey: 'produkId',
-        as: 'toppings',
-      });
+      // Relasi Outlet
+      const OutletModel = models.Outlet || models.outlet;
+      if (OutletModel) {
+        Produk.belongsTo(OutletModel, {
+          foreignKey: 'outletId',
+          as: 'outlet',
+        });
+      }
 
-      // Relasi Qty & Harga
-      produk.hasMany(models.hargaProduk, {
-        foreignKey: 'produkId',
-        as: 'hargaproduks',
-      });
+      // Relasi Topping
+      const ToppingModel = models.topping || models.Topping;
+      if (ToppingModel) {
+        Produk.hasMany(ToppingModel, {
+          foreignKey: 'produkId',
+          as: 'toppings',
+        });
+      }
+
+      // Relasi Harga
+      const HargaProdukModel = models.hargaProduk || models.HargaProduk;
+      if (HargaProdukModel) {
+        Produk.hasMany(HargaProdukModel, {
+          foreignKey: 'produkId',
+          as: 'hargaproduks',
+        });
+      }
     }
   }
 
-  produk.init(
+  Produk.init(
     {
       namaProduk: {
         type: DataTypes.STRING,
         allowNull: false,
       },
+
       keterangan: {
         type: DataTypes.STRING,
         allowNull: true,
       },
+
       categoryId: {
         type: DataTypes.INTEGER,
         allowNull: false,
+        references: {
+          model: 'categories',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'RESTRICT',
       },
+
+      outletId: {
+        type: DataTypes.INTEGER,
+        allowNull: true, // Diubah ke true agar mendukung produk umum/tanpa outlet
+        references: {
+          model: 'Outlets',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL', // Diubah ke SET NULL jika outlet dihapus
+      },
+
       produkImg: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
       },
     },
     {
@@ -50,5 +89,5 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
-  return produk;
+  return Produk;
 };

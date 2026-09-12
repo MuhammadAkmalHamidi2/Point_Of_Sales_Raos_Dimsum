@@ -1,11 +1,11 @@
 const { Outlet, Karyawan, User, sequelize } = require("../models");
 
 function ownerFilter(req) {
-  return req.user.role === "master" ? {} : { userId: req.user.id };
+  return req.user.role === "admin" ? {} : { userId: req.user.id };
 }
 
 function outletFilter(req, outletId) {
-  if (req.user.role === "master") return { id: outletId };
+  if (req.user.role === "admin") return { id: outletId };
   return { id: outletId, userId: req.user.id };
 }
 

@@ -40,7 +40,7 @@ export default function LoginPage() {
 
     localStorage.setItem("token", data.token);
     localStorage.setItem("role", data.role);
-    localStorage.removeItem("outletId");
+    localStorage.setItem("outletId", data.outletId); // <-- Menyimpan angka 2 untuk Dika
     if (data.role === "admin") {
       router.push("/admin");
     } else if (data.role === "kasir") {

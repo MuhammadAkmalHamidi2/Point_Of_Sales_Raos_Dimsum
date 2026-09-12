@@ -14,6 +14,7 @@ const outletRoutes = require("./routers/outlet-router");
 const absenRoutes = require("./routers/absen-router");
 const dashboardRoutes = require("./routers/dashboard-router");
 const analisaRoutes = require("./routers/analisa-router");
+const biayaOperasionalRoutes = require("./routers/biaya-operasional-router");
 
 const server = express();
 const PORT = process.env.PORT;
@@ -32,6 +33,7 @@ server.use("/api/outlets", outletRoutes);
 server.use("/api/absen", absenRoutes);
 server.use("/api/dashboard", dashboardRoutes);
 server.use("/api/analisa", analisaRoutes);
+server.use("/api/biaya-operasional", biayaOperasionalRoutes)
 
 server.get("/", (req, res) => {
   res.json({
@@ -40,6 +42,6 @@ server.get("/", (req, res) => {
 });
 
 server.listen(PORT, () => {
-  // db.sequelize.sync({ alter: true });
+  db.sequelize.sync({ alter: true });
   console.log(`Server is running at port : ${PORT}`);
 });
