@@ -214,11 +214,10 @@ export default function CategoryPage() {
     return 0;
   };
 
-  // Helper URL Gambar Produk (disesuaikan agar mengarah ke folder /public/produk/)
-  const getImageUrl = (imgName: string | null) => {
-    if (!imgName) return "";
+  // Helper URL Gambar Produk (Diperbarui ke /produk/ sesuai multer backend)
+  const getImageUrl = (imgName: string) => {
     if (imgName.startsWith("http")) return imgName;
-    return `${API_URL}/public/produk/${imgName}`;
+    return `${API_URL}/produk/${imgName}`;
   };
 
   // =========================
