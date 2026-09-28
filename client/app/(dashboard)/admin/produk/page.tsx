@@ -356,7 +356,7 @@ export default function AdminPage() {
     if (prod.produkImg) {
       const imgUrl = prod.produkImg.startsWith("http")
         ? prod.produkImg
-        : `${API_BASE_URL}/uploads/${prod.produkImg}`;
+        : `${API_BASE_URL}/produk/${prod.produkImg}`;
       setImagePreview(imgUrl);
     } else {
       setImagePreview("");
@@ -498,8 +498,8 @@ export default function AdminPage() {
           <button
             onClick={() => setActiveTab("products")}
             className={`text-xs font-bold px-3.5 py-1.5 rounded-lg transition-all ${activeTab === "products"
-                ? "bg-white text-[#212121] shadow-xs"
-                : "text-zinc-400"
+              ? "bg-white text-[#212121] shadow-xs"
+              : "text-zinc-400"
               }`}
           >
             Produk ({products.length})
@@ -507,8 +507,8 @@ export default function AdminPage() {
           <button
             onClick={() => setActiveTab("categories")}
             className={`text-xs font-bold px-3.5 py-1.5 rounded-lg transition-all ${activeTab === "categories"
-                ? "bg-white text-[#212121] shadow-xs"
-                : "text-zinc-400"
+              ? "bg-white text-[#212121] shadow-xs"
+              : "text-zinc-400"
               }`}
           >
             Kategori ({categories.length})
@@ -519,8 +519,8 @@ export default function AdminPage() {
       {alert.message && (
         <div
           className={`flex items-center px-4 py-3 rounded-2xl border text-xs font-semibold shadow-2xs ${alert.type === "error"
-              ? "bg-red-50 border-red-100 text-[#E52424]"
-              : "bg-emerald-50 border-emerald-100 text-emerald-600"
+            ? "bg-red-50 border-red-100 text-[#E52424]"
+            : "bg-emerald-50 border-emerald-100 text-emerald-600"
             }`}
         >
           {alert.message}
@@ -560,7 +560,7 @@ export default function AdminPage() {
                 />
               </div>
 
-              {/* MULTI-SELECT CHECKBOX OUTLET (TERPERBAIKI KLIK CARD) */}
+              {/* MULTI-SELECT CHECKBOX OUTLET */}
               <div className="space-y-2 border border-zinc-200 p-3.5 rounded-xl bg-zinc-50/50">
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-semibold text-zinc-700">
@@ -574,11 +574,10 @@ export default function AdminPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
-                  {/* OPTION ALL */}
                   <label
                     className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer text-xs font-medium transition-all select-none ${prodForm.outletIds.length === 0
-                        ? "bg-emerald-50 border-emerald-300 text-emerald-800 font-bold shadow-2xs"
-                        : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100"
+                      ? "bg-emerald-50 border-emerald-300 text-emerald-800 font-bold shadow-2xs"
+                      : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100"
                       }`}
                   >
                     <input
@@ -590,15 +589,14 @@ export default function AdminPage() {
                     <span>-- Semua Outlet (Umum) --</span>
                   </label>
 
-                  {/* SPECIFIC OUTLETS */}
                   {tenants.map((t) => {
                     const isChecked = prodForm.outletIds.includes(String(t.id));
                     return (
                       <label
                         key={t.id}
                         className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer text-xs font-medium transition-all select-none ${isChecked
-                            ? "bg-red-50 border-red-300 text-[#E52424] font-bold shadow-2xs"
-                            : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100"
+                          ? "bg-red-50 border-red-300 text-[#E52424] font-bold shadow-2xs"
+                          : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100"
                           }`}
                       >
                         <input
@@ -870,7 +868,7 @@ export default function AdminPage() {
                                 src={
                                   prod.produkImg.startsWith("http")
                                     ? prod.produkImg
-                                    : `${API_BASE_URL}/uploads/${prod.produkImg}`
+                                    : `${API_BASE_URL}/produk/${prod.produkImg}`
                                 }
                                 alt={prod.namaProduk}
                                 className="w-10 h-10 rounded-lg object-cover border border-zinc-200"
@@ -944,7 +942,6 @@ export default function AdminPage() {
       {/* TAB KATEGORI */}
       {activeTab === "categories" && (
         <div className="space-y-6">
-          {/* FORM KATEGORI */}
           <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
             <div className="flex justify-between items-center">
               <h2 className="text-sm font-bold text-[#212121]">
@@ -999,7 +996,6 @@ export default function AdminPage() {
             </form>
           </div>
 
-          {/* DAFTAR KATEGORI */}
           <div className="bg-white rounded-2xl border border-zinc-200/80 shadow-2xs overflow-hidden">
             <div className="p-5 border-b border-zinc-100">
               <h3 className="text-sm font-bold text-[#212121]">

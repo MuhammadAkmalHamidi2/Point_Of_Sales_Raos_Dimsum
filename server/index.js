@@ -22,7 +22,7 @@ const PORT = process.env.PORT;
 server.use(cors());
 server.use(express.json());
 server.use(express.urlencoded({ extended: true }));
-server.use("/public", express.static(path.join(__dirname, "public")));
+server.use("/produk", express.static(path.join(__dirname, "public/produk")));
 
 server.use("/api/auth", authRoutes);
 server.use("/api/categories", categoryRoutes);

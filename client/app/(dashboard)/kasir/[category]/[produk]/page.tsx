@@ -508,7 +508,7 @@ export default function ProductDetailPage() {
         <div className="h-56 sm:h-64 bg-white flex items-center justify-center border-b border-zinc-200 overflow-hidden">
           {product.produkImg ? (
             <img
-              src={`${API_URL}/public/produk/${product.produkImg}`}
+              src={`${API_URL}/produk/${product.produkImg}`}
               alt={product.namaProduk}
               className="w-full h-full object-cover"
             />

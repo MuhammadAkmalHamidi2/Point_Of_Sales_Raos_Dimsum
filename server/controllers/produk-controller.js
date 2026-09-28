@@ -104,7 +104,9 @@ const getProdukByCategory = async (req, res) => {
   }
 };
 
-// CREATE produk (DENGAN SUPPORT OUTLET IDS ARRAY - TANPA PROSES FOTO PRODUK)
+// ==========================================
+// 2. CREATE PRODUK (DENGAN SUPPORT FOTO & OUTLET IDS)
+// ==========================================
 const createProduk = async (req, res) => {
   const t = await sequelize.transaction();
   try {
@@ -128,7 +130,9 @@ const createProduk = async (req, res) => {
     const toppings = parseArrayField(req.body.toppings);
     const hargaproduks = parseArrayField(req.body.hargaproduks);
 
-    // Pengelolaan foto produk dihilangkan sepenuhnya
+    // Tangkap file gambar yang diunggah melalui multer (jika ada)
+    const filename = req.file ? req.file.filename : null;
+
     const newProduk = await produk.create(
       {
         namaProduk: namaProduk.trim(),
@@ -136,7 +140,7 @@ const createProduk = async (req, res) => {
         categoryId: validCategoryId,
         tenantId: parseSafeNumber(tenantId),
         outletIds: outletIdsVal,
-        produkImg: null,
+        produkImg: filename, // Disimpan ke database
       },
       { transaction: t }
     );
@@ -182,14 +186,16 @@ const createProduk = async (req, res) => {
   }
 };
 
-// UPDATE produk
+// ==========================================
+// 3. UPDATE PRODUK (DENGAN SUPPORT FOTO & OUTLET IDS)
+// ==========================================
 const updateProduk = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const { id } = req.params;
     const { namaProduk, keterangan, categoryId, tenantId } = req.body;
 
-    const item = await produk.findByPk(id);
+    const item = await produk.findByPk(id, { transaction: t });
     if (!item) {
       await t.rollback();
       return res.status(404).json({ success: false, message: "Produk tidak ditemukan" });
@@ -201,7 +207,19 @@ const updateProduk = async (req, res) => {
     const outletArray = rawOutletIds.map((id) => String(id)).filter(Boolean);
     const outletIdsVal = outletArray.length > 0 ? JSON.stringify(outletArray) : null;
 
-    // Foto produk dikosongkan/diabaikan
+    // Jika ada file gambar baru, gunakan file baru. Jika tidak, tetap gunakan gambar lama.
+    let filename = item.produkImg;
+    if (req.file) {
+      filename = req.file.filename;
+      // Opsional: Hapus file fisik gambar lama jika ada file pengganti baru
+      if (item.produkImg) {
+        const oldImagePath = path.join(__dirname, "../public/produk", item.produkImg);
+        if (fs.existsSync(oldImagePath)) {
+          try { fs.unlinkSync(oldImagePath); } catch (e) { /* ignore */ }
+        }
+      }
+    }
+
     await item.update(
       {
         namaProduk: namaProduk ? namaProduk.trim() : item.namaProduk,
@@ -209,7 +227,7 @@ const updateProduk = async (req, res) => {
         categoryId: validCategoryId,
         tenantId: tenantId !== undefined ? parseSafeNumber(tenantId) : item.tenantId,
         outletIds: outletIdsVal,
-        produkImg: null,
+        produkImg: filename,
       },
       { transaction: t }
     );
@@ -325,11 +343,19 @@ const deleteProduk = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const item = await produk.findByPk(id);
+    const item = await produk.findByPk(id, { transaction: t });
 
     if (!item) {
       await t.rollback();
       return res.status(404).json({ success: false, message: "Produk tidak ditemukan" });
+    }
+
+    // Hapus file fisik gambar jika ada
+    if (item.produkImg) {
+      const imagePath = path.join(__dirname, "../public/produk", item.produkImg);
+      if (fs.existsSync(imagePath)) {
+        try { fs.unlinkSync(imagePath); } catch (e) { /* ignore */ }
+      }
     }
 
     await topping.destroy({ where: { produkId: id }, transaction: t });
