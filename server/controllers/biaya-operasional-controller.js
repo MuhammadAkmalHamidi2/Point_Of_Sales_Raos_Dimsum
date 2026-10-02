@@ -1,4 +1,4 @@
-const { biayaoperasional } = require("../models");
+const { biayaoperasional, user } = require("../models");
 
 // ======================================================
 // CREATE BIAYA OPERASIONAL
@@ -201,8 +201,51 @@ const deleteBiayaOperasional = async (req, res) => {
   }
 };
 
+const getAllBiayaOperasionalByTenant = async (req, res) => {
+  try {
+    const { outletId } = req.params;
+
+    if (!outletId) {
+      return res.status(400).json({
+        success: false,
+        message: "Outlet ID tidak ditemukan pada parameter",
+      });
+    }
+
+    const whereClause = {
+      outletId: Number(outletId),
+    };
+
+    // Opsional: Jika ingin memfilter berdasarkan tanggal tertentu via query
+    if (req.query.tanggal) {
+      whereClause.tanggal = req.query.tanggal;
+    }
+
+    const data = await biayaoperasional.findAll({
+      where: whereClause,
+      order: [["createdAt", "DESC"]],
+    });
+
+    const total = data.reduce((acc, item) => acc + Number(item.biaya || item.jumlah || 0), 0);
+
+    return res.status(200).json({
+      success: true,
+      data,
+      total,
+    });
+  } catch (error) {
+    console.error("❌ GET BIAYA OPERASIONAL TENANT ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Gagal mengambil biaya operasional tenant",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createBiayaOperasional,
   getBiayaOperasionalHariIni,
   deleteBiayaOperasional,
+  getAllBiayaOperasionalByTenant
 };

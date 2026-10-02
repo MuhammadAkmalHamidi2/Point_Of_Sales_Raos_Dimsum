@@ -8,6 +8,7 @@ const {
   createBiayaOperasional,
   getBiayaOperasionalHariIni,
   deleteBiayaOperasional,
+  getAllBiayaOperasionalByTenant,
 } = require("../controllers/biaya-operasional-controller");
 
 
@@ -33,6 +34,12 @@ router.post(
 router.delete(
   "/:id",
   deleteBiayaOperasional
+);
+
+// GET ALL biaya operasional
+router.get(
+  "/tenant/:outletId", 
+  getAllBiayaOperasionalByTenant
 );
 
 
