@@ -3,13 +3,14 @@ const { DimsumBawa, category } = require("../models");
 // 1. Buat atau Update Dimsum Dibawa per Kasir/Karyawan
 const createDimsumBawa = async (req, res) => {
   try {
-    const { categoryId, category_id, jumlahPcs, jumlah_bawa } = req.body;
+    const { categoryId, category_id, jumlahPcs, jumlah_bawa, outletId, outlet_id, produkId, produk_id } = req.body;
 
     const targetCategoryId = categoryId || category_id;
+    const targetOutletId = outletId || outlet_id || req.user?.outletId || req.user?.karyawan?.outlet_id || null;
+    const targetProdukId = produkId || produk_id || null;
     const rawJumlah = jumlahPcs !== undefined ? jumlahPcs : jumlah_bawa;
     const validJumlahBawa = Number(rawJumlah);
 
-    // Ambil karyawan_id jika ada, fallback ke user.id
     const karyawanId = req.user?.karyawan?.id || req.user?.id || null;
 
     if (!targetCategoryId) {
@@ -46,6 +47,8 @@ const createDimsumBawa = async (req, res) => {
 
     if (record) {
       record.jumlah_bawa = validJumlahBawa;
+      if (targetOutletId) record.outlet_id = targetOutletId;
+      if (targetProdukId) record.produk_id = targetProdukId;
       await record.save();
     } else {
       record = await DimsumBawa.create({
@@ -53,6 +56,8 @@ const createDimsumBawa = async (req, res) => {
         jumlah_bawa: validJumlahBawa,
         tanggal: todayStr,
         karyawan_id: karyawanId,
+        outlet_id: targetOutletId,
+        produk_id: targetProdukId,
       });
     }
 
@@ -74,6 +79,11 @@ const createDimsumBawa = async (req, res) => {
 // 2. Ambil Data Dimsum Dibawa Hari Ini Khusus Kasir/Karyawan Login
 const getDimsumBawaHariIni = async (req, res) => {
   try {
+    // Alihkan ke per outlet jika query query.outletId dikirim oleh admin/FE
+    if (req.query.outletId) {
+      return getAllDimsumBawaPerOutletId(req, res);
+    }
+
     const todayStr = new Date().toLocaleDateString("en-CA", {
       timeZone: "Asia/Jakarta",
     });
@@ -113,8 +123,8 @@ const getDimsumBawaHariIni = async (req, res) => {
 // 3. Ambil Semua Data Dimsum Dibawa Berdasarkan Outlet ID
 const getAllDimsumBawaPerOutletId = async (req, res) => {
   try {
-    const { outletId } = req.params;
-    const { tanggal } = req.query; // Opsional: jika ingin memfilter tanggal tertentu lewat query param ?tanggal=YYYY-MM-DD
+    const outletId = req.params.outletId || req.query.outletId;
+    const { tanggal } = req.query;
 
     if (!outletId) {
       return res.status(400).json({
@@ -123,11 +133,14 @@ const getAllDimsumBawaPerOutletId = async (req, res) => {
       });
     }
 
+    const todayStr = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Asia/Jakarta",
+    });
+
     const whereClause = { outlet_id: outletId };
 
-    if (tanggal) {
-      whereClause.tanggal = tanggal;
-    }
+    // Set default tanggal ke hari ini jika tidak ada filter query tanggal
+    whereClause.tanggal = tanggal || todayStr;
 
     const list = await DimsumBawa.findAll({
       where: whereClause,

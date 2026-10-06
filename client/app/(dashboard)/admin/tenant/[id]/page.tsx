@@ -78,8 +78,17 @@ type BiayaOperasional = {
 
 type DimsumBawaOutlet = {
   id: number;
-  namaKategori: string;
-  jumlah_bawa: number;
+  categoryId?: number;
+  category_id?: number;
+  namaKategori?: string;
+  jumlah_bawa?: number;
+  jumlahPcs?: number;
+  jumlah_pcs?: number;
+  category?: {
+    id: number;
+    name?: string;
+    nama_kategori?: string;
+  };
 };
 
 function getComparisonRange(
@@ -217,12 +226,15 @@ export default function TenantDetailPage() {
     };
 
     const fetchDimsumBawaOutlet = async () => {
-      if (!id) return; // Jangan lakukan fetch jika id belum ada
+      if (!id) return;
       try {
-        const response = await api.get(`/api/dimsum-bawa?outletId=${id}`);
+        const response = await api.get<{ data?: DimsumBawaOutlet[] }>(
+          `/api/dimsum-bawa/outlet/${id}`,
+        );
         setDimsumBawaList(response.data.data ?? []);
       } catch (error) {
         console.error("Gagal mengambil data dimsum dibawa outlet:", error);
+        setDimsumBawaList([]);
       }
     };
 
@@ -395,23 +407,115 @@ export default function TenantDetailPage() {
     return Object.values(map);
   }, [filteredTransaksi]);
 
+  // Akumulasi/Gabungan Dimsum Dibawa per Outlet (Gabungkan input dari multiple karyawan/kasir)
+  const dimsumBawaGrouped = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        catId?: number;
+        namaKategori: string;
+        jumlahBawa: number;
+      }
+    > = {};
+
+    dimsumBawaList.forEach((item) => {
+      const catId = item.categoryId || item.category_id || item.category?.id;
+      const catName =
+        item.namaKategori ||
+        item.category?.name ||
+        item.category?.nama_kategori ||
+        "Tanpa Kategori";
+      const pcs = Number(item.jumlah_bawa ?? item.jumlahPcs ?? item.jumlah_pcs ?? 0);
+
+      const key = catId ? `id_${catId}` : catName.toLowerCase();
+
+      if (!map[key]) {
+        map[key] = {
+          catId,
+          namaKategori: catName,
+          jumlahBawa: 0,
+        };
+      }
+
+      map[key].jumlahBawa += pcs;
+    });
+
+    return Object.values(map);
+  }, [dimsumBawaList]);
+
   // Kalkulasi Sisa Stok Berdasarkan Akumulasi Dimsum Dibawa Outlet - Terjual
   const recapSisaStok = useMemo(() => {
-    return dimsumBawaList.map((bawa) => {
-      const terjualItem = recapProduk.find(
-        (r) => r.namaKategori.toLowerCase() === bawa.namaKategori.toLowerCase(),
-      );
-      const totalTerjual = terjualItem ? terjualItem.totalPcs : 0;
-      const sisaStok = Math.max(0, bawa.jumlah_bawa - totalTerjual);
+    const map: Record<
+      string,
+      {
+        catId?: number;
+        namaKategori: string;
+        jumlahBawa: number;
+        totalTerjual: number;
+        sisaStok: number;
+      }
+    > = {};
 
-      return {
-        namaKategori: bawa.namaKategori,
-        jumlahBawa: bawa.jumlah_bawa,
-        totalTerjual,
-        sisaStok,
-      };
+    // 1. Akumulasi Dimsum Dibawa per Outlet
+    dimsumBawaList.forEach((bawa) => {
+      const catId = bawa.categoryId || bawa.category_id || bawa.category?.id;
+      const catName =
+        bawa.namaKategori ||
+        bawa.category?.name ||
+        bawa.category?.nama_kategori ||
+        "Lainnya";
+      const pcs = Number(bawa.jumlah_bawa ?? bawa.jumlahPcs ?? bawa.jumlah_pcs ?? 0);
+
+      const key = catId ? `id_${catId}` : catName.toLowerCase();
+
+      if (!map[key]) {
+        map[key] = {
+          catId,
+          namaKategori: catName,
+          jumlahBawa: 0,
+          totalTerjual: 0,
+          sisaStok: 0,
+        };
+      }
+
+      map[key].jumlahBawa += pcs;
     });
-  }, [dimsumBawaList, recapProduk]);
+
+    // 2. Akumulasi Terjual dari Transaksi Outlet
+    filteredTransaksi.forEach((trx) => {
+      trx.items.forEach((item) => {
+        const catObj = item.produk?.category;
+        const catName =
+          catObj?.name ||
+          catObj?.nama_kategori ||
+          item.produk?.namaProduk ||
+          item.namaProduk ||
+          "Lainnya";
+        const catId = catObj?.id;
+
+        const key = catId ? `id_${catId}` : catName.toLowerCase();
+        const totalPcsItem = Number(item.pcs || 1) * Number(item.pax || 1);
+
+        if (!map[key]) {
+          map[key] = {
+            catId,
+            namaKategori: catName,
+            jumlahBawa: 0,
+            totalTerjual: 0,
+            sisaStok: 0,
+          };
+        }
+
+        map[key].totalTerjual += totalPcsItem;
+      });
+    });
+
+    // 3. Hitung Sisa Stok (Dibawa - Terjual)
+    return Object.values(map).map((item) => ({
+      ...item,
+      sisaStok: item.jumlahBawa - item.totalTerjual,
+    }));
+  }, [dimsumBawaList, filteredTransaksi]);
 
   const comparison = useMemo(() => {
     const range = getComparisonRange(
@@ -573,11 +677,10 @@ export default function TenantDetailPage() {
               <button
                 key={tab}
                 onClick={() => setFilter(tab)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                  filter === tab
-                    ? "bg-[#E52424] text-white shadow-xs"
-                    : "text-zinc-500 hover:text-zinc-900"
-                }`}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filter === tab
+                  ? "bg-[#E52424] text-white shadow-xs"
+                  : "text-zinc-500 hover:text-zinc-900"
+                  }`}
               >
                 {tab}
               </button>
@@ -641,13 +744,12 @@ export default function TenantDetailPage() {
             </h2>
             {comparison && (
               <div
-                className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-                  comparison.percent === null
-                    ? "bg-zinc-100 text-zinc-500"
-                    : comparison.percent >= 0
-                      ? "bg-emerald-50 text-emerald-600"
-                      : "bg-red-50 text-red-600"
-                }`}
+                className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${comparison.percent === null
+                  ? "bg-zinc-100 text-zinc-500"
+                  : comparison.percent >= 0
+                    ? "bg-emerald-50 text-emerald-600"
+                    : "bg-red-50 text-red-600"
+                  }`}
               >
                 {comparison.percent === null ? (
                   <span>Belum ada data {comparison.label}</span>
@@ -773,11 +875,10 @@ export default function TenantDetailPage() {
                 {chartData.map((item, idx) => (
                   <span
                     key={idx}
-                    className={`flex-1 text-center text-[9px] font-semibold text-zinc-500 truncate ${
-                      filter === "Bulanan" && idx % 3 !== 0
-                        ? "hidden md:inline"
-                        : ""
-                    }`}
+                    className={`flex-1 text-center text-[9px] font-semibold text-zinc-500 truncate ${filter === "Bulanan" && idx % 3 !== 0
+                      ? "hidden md:inline"
+                      : ""
+                      }`}
                   >
                     {item.label}
                   </span>
@@ -866,257 +967,7 @@ export default function TenantDetailPage() {
         )}
       </div>
 
-      {/* INPUT STOK DIMSUM DIBAWA (AKUMULASI PER OUTLET) */}
-      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                />
-              </svg>
-            </div>
-            <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
-              Akumulasi Stok Dimsum Dibawa (Per Outlet)
-            </h2>
-          </div>
-          <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
-            {dimsumBawaList.length} Kategori
-          </span>
-        </div>
-
-        {dimsumBawaList.length === 0 ? (
-          <p className="text-xs text-zinc-400 py-6 text-center italic">
-            Belum ada data stok dimsum dibawa yang diinput oleh kasir di outlet
-            ini hari ini.
-          </p>
-        ) : (
-          <div className="divide-y divide-zinc-100">
-            {dimsumBawaList.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between py-3 first:pt-0 last:pb-0 text-xs"
-              >
-                <p className="font-bold text-[#212121] text-sm">
-                  {item.namaKategori}
-                </p>
-                <span className="bg-emerald-50 text-emerald-700 font-mono text-xs font-bold px-3 py-1.5 rounded-xl border border-emerald-200/60">
-                  {item.jumlah_bawa} Pcs
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* SISA STOK DIMSUM HARI INI */}
-      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-            </div>
-            <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
-              Sisa Stok Dimsum Hari Ini (Outlet)
-            </h2>
-          </div>
-          <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
-            {recapSisaStok.length} Kategori
-          </span>
-        </div>
-
-        {recapSisaStok.length === 0 ? (
-          <p className="text-xs text-zinc-400 py-6 text-center italic">
-            Belum ada kalkulasi sisa stok untuk outlet ini.
-          </p>
-        ) : (
-          <div className="divide-y divide-zinc-100">
-            {recapSisaStok.map((item) => (
-              <div
-                key={item.namaKategori}
-                className="flex items-center justify-between py-3 first:pt-0 last:pb-0 text-xs"
-              >
-                <div className="space-y-0.5">
-                  <p className="font-bold text-[#212121] text-sm">
-                    {item.namaKategori}
-                  </p>
-                  <p className="text-[11px] font-medium text-zinc-400">
-                    Dibawa: {item.jumlahBawa} Pcs | Terjual: {item.totalTerjual}{" "}
-                    Pcs
-                  </p>
-                </div>
-
-                <span className="bg-[#212121] text-white font-mono text-xs font-bold px-3 py-1.5 rounded-xl shadow-2xs">
-                  {item.sisaStok}{" "}
-                  <span className="text-[10px] font-normal text-zinc-300">
-                    Pcs
-                  </span>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* REKAP JENIS DIMSUM (KATEGORI) */}
-      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                />
-              </svg>
-            </div>
-            <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
-              Rekap Jenis Dimsum (
-              {filter === "Bulanan" ? selectedMonth : filter})
-            </h2>
-          </div>
-          <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
-            {recapProduk.length} Kategori
-          </span>
-        </div>
-
-        {recapProduk.length === 0 ? (
-          <p className="text-xs text-zinc-400 py-6 text-center italic">
-            Belum ada data rekap kategori keluar pada periode ini.
-          </p>
-        ) : (
-          <div className="divide-y divide-zinc-100">
-            {recapProduk.map((item) => (
-              <div
-                key={item.namaKategori}
-                className="flex items-center justify-between py-3 first:pt-0 last:pb-0 text-xs"
-              >
-                <div className="space-y-0.5">
-                  <p className="font-bold text-[#212121] leading-tight text-sm">
-                    {item.namaKategori}
-                  </p>
-                  <p className="text-[11px] font-medium text-zinc-400">
-                    Terjual dalam {item.totalPax} Pax
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <span className="bg-[#212121] text-white font-mono text-xs font-bold px-3 py-1.5 rounded-xl shadow-2xs">
-                    {item.totalPcs}{" "}
-                    <span className="text-[10px] font-normal text-zinc-300">
-                      Pcs
-                    </span>
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* PERSENTASE PEMBAYARAN + DATA KARYAWAN */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-        <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
-          <p className="text-sm font-bold text-[#212121]">
-            Persentase Metode Pembayaran
-          </p>
-
-          <div className="flex items-center justify-between">
-            <div className="relative w-28 h-28 flex items-center justify-center">
-              <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15.915"
-                  fill="none"
-                  stroke="#F5F6F8"
-                  strokeWidth="3.8"
-                />
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15.915"
-                  fill="none"
-                  stroke="#1E88E5"
-                  strokeWidth="3.8"
-                  strokeDasharray={`${cashPercent} ${100 - cashPercent}`}
-                  strokeDashoffset="0"
-                  strokeLinecap="round"
-                  className="transition-all duration-500"
-                />
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15.915"
-                  fill="none"
-                  stroke="#E52424"
-                  strokeWidth="3.8"
-                  strokeDasharray={`${qrisPercent} ${100 - qrisPercent}`}
-                  strokeDashoffset={`-${cashPercent}`}
-                  strokeLinecap="round"
-                  className="transition-all duration-500"
-                />
-              </svg>
-              <div className="absolute flex flex-col items-center leading-none">
-                <span className="text-xs font-bold text-[#212121]">100%</span>
-                <span className="text-[9px] text-zinc-400 mt-0.5">Total</span>
-              </div>
-            </div>
-
-            <div className="space-y-3 w-1/2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-[#1E88E5]"></span>
-                  <span className="font-semibold text-zinc-600 text-xs">
-                    Cash
-                  </span>
-                </div>
-                <span className="font-bold text-[#212121] text-xs">
-                  {cashPercent}%
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-[#E52424]"></span>
-                  <span className="font-semibold text-zinc-600 text-xs">
-                    QRIS
-                  </span>
-                </div>
-                <span className="font-bold text-[#212121] text-xs">
-                  {qrisPercent}%
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
 
         <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
           <div className="flex justify-between items-center">
@@ -1161,6 +1012,189 @@ export default function TenantDetailPage() {
             </div>
           )}
         </div>
+      </div>
+
+
+      {/* AKUMULASI STOK DIMSUM DIBAWA (PER OUTLET) */}
+      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                />
+              </svg>
+            </div>
+            <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
+              Akumulasi Stok Dimsum Dibawa
+            </h2>
+          </div>
+          <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
+            {dimsumBawaGrouped.length} Kategori
+          </span>
+        </div>
+
+        {dimsumBawaGrouped.length === 0 ? (
+          <p className="text-xs text-zinc-400 py-6 text-center italic">
+            Belum ada data stok dimsum dibawa yang diinput oleh kasir di outlet
+            ini hari ini.
+          </p>
+        ) : (
+          <div className="divide-y divide-zinc-100">
+            {dimsumBawaGrouped.map((item, idx) => (
+              <div
+                key={item.catId ? `bawa_${item.catId}` : `bawa_${idx}`}
+                className="flex items-center justify-between py-3 first:pt-0 last:pb-0 text-xs"
+              >
+                <p className="font-bold text-[#212121] text-sm">{item.namaKategori}</p>
+                <span className="bg-emerald-50 text-emerald-700 font-mono text-xs font-bold px-3 py-1.5 rounded-xl border border-emerald-200/60">
+                  {item.jumlahBawa} Pcs
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* SISA STOK DIMSUM HARI INI */}
+      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+            </div>
+            <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
+              Sisa Stok Dimsum Hari Ini 
+            </h2>
+          </div>
+          <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
+            {recapSisaStok.length} Kategori
+          </span>
+        </div>
+
+        {recapSisaStok.length === 0 ? (
+          <p className="text-xs text-zinc-400 py-6 text-center italic">
+            Belum ada kalkulasi sisa stok untuk outlet ini.
+          </p>
+        ) : (
+          <div className="divide-y divide-zinc-100">
+            {recapSisaStok.map((item) => (
+              <div
+                key={item.namaKategori}
+                className="flex items-center justify-between py-3 first:pt-0 last:pb-0 text-xs"
+              >
+                <div className="space-y-0.5">
+                  <p className="font-bold text-[#212121] text-sm">
+                    {item.namaKategori}
+                  </p>
+                  <p className="text-[11px] font-medium text-zinc-400">
+                    Dibawa: {item.jumlahBawa} Pcs | Terjual: {item.totalTerjual}{" "}
+                    Pcs
+                  </p>
+                </div>
+
+                <span
+                  className={`font-mono text-xs font-bold px-3 py-1.5 rounded-xl ${item.sisaStok < 0
+                    ? "bg-red-100 text-red-700 border border-red-200"
+                    : "bg-[#212121] text-white shadow-2xs"
+                    }`}
+                >
+                  {item.sisaStok}{" "}
+                  <span
+                    className={`text-[10px] font-normal ${item.sisaStok < 0 ? "text-red-500" : "text-zinc-300"
+                      }`}
+                  >
+                    Pcs
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* REKAP JENIS DIMSUM (KATEGORI) */}
+      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                />
+              </svg>
+            </div>
+            <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
+              Rekap PENJUALAN (
+              {filter === "Bulanan" ? selectedMonth : filter})
+            </h2>
+          </div>
+          <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
+            {recapProduk.length} Kategori
+          </span>
+        </div>
+
+        {recapProduk.length === 0 ? (
+          <p className="text-xs text-zinc-400 py-6 text-center italic">
+            Belum ada data rekap kategori keluar pada periode ini.
+          </p>
+        ) : (
+          <div className="divide-y divide-zinc-100">
+            {recapProduk.map((item) => (
+              <div
+                key={item.namaKategori}
+                className="flex items-center justify-between py-3 first:pt-0 last:pb-0 text-xs"
+              >
+                <div className="space-y-0.5">
+                  <p className="font-bold text-[#212121] leading-tight text-sm">
+                    {item.namaKategori}
+                  </p>
+                  <p className="text-[11px] font-medium text-zinc-400">
+                    Terjual dalam {item.totalPax} Pax
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <span className="bg-[#212121] text-white font-mono text-xs font-bold px-3 py-1.5 rounded-xl shadow-2xs">
+                    {item.totalPcs}{" "}
+                    <span className="text-[10px] font-normal text-zinc-300">
+                      Pcs
+                    </span>
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* RIWAYAT TRANSAKSI */}
