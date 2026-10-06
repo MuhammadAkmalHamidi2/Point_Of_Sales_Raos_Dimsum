@@ -5,6 +5,8 @@ const cors = require("cors");
 const path = require("path");
 
 const db = require("./models");
+
+// Import Routers
 const authRoutes = require("./routers/auth-router");
 const categoryRoutes = require("./routers/category-router");
 const produkRoutes = require("./routers/produk-router");
@@ -15,16 +17,21 @@ const absenRoutes = require("./routers/absen-router");
 const dashboardRoutes = require("./routers/dashboard-router");
 const analisaRoutes = require("./routers/analisa-router");
 const biayaOperasionalRoutes = require("./routers/biaya-operasional-router");
+const dimsumBawaRoutes = require("./routers/dimsum-bawa-router");
 
 const server = express();
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 5000;
 
+// Middlewares
 server.use(cors());
 server.use(express.json());
 server.use(express.urlencoded({ extended: true }));
+
+// Static Files
 server.use("/produk", express.static(path.join(__dirname, "public/produk")));
 server.use("/public", express.static(path.join(__dirname, "public")));
 
+// API Routes
 server.use("/api/auth", authRoutes);
 server.use("/api/categories", categoryRoutes);
 server.use("/api/products", produkRoutes);
@@ -34,8 +41,10 @@ server.use("/api/outlets", outletRoutes);
 server.use("/api/absen", absenRoutes);
 server.use("/api/dashboard", dashboardRoutes);
 server.use("/api/analisa", analisaRoutes);
-server.use("/api/biaya-operasional", biayaOperasionalRoutes)
+server.use("/api/biaya-operasional", biayaOperasionalRoutes);
+server.use("/api/dimsum-bawa", dimsumBawaRoutes);
 
+// Root Endpoint
 server.get("/", (req, res) => {
   res.json({
     message: "POS Raos Dimsum API is running",

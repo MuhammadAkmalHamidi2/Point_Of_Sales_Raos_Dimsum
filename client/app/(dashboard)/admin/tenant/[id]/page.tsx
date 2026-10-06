@@ -64,7 +64,8 @@ type TransaksiGroup = Omit<Transaksi, "pcs" | "pax" | "saus" | "namaProduk"> & {
 type BiayaOperasional = {
   id: number;
   outletId?: number;
-  keterangan: string;
+  keterangan?: string;
+  deskripsi?: string;
   biaya?: number;
   jumlah?: number;
   tanggal?: string;
@@ -75,11 +76,17 @@ type BiayaOperasional = {
   };
 };
 
+type DimsumBawaOutlet = {
+  id: number;
+  namaKategori: string;
+  jumlah_bawa: number;
+};
+
 function getComparisonRange(
   filter: FilterType,
   startValue: string,
   endValue: string,
-  selectedMonth: string
+  selectedMonth: string,
 ) {
   const now = new Date();
   const todayStart = new Date(now);
@@ -88,12 +95,18 @@ function getComparisonRange(
   if (filter === "Hari Ini") {
     const yesterdayStart = new Date(todayStart);
     yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-    return { start: yesterdayStart, end: new Date(todayStart.getTime() - 1), label: "kemarin" };
+    return {
+      start: yesterdayStart,
+      end: new Date(todayStart.getTime() - 1),
+      label: "kemarin",
+    };
   }
 
   if (filter === "Mingguan") {
     const currentWeekStart = new Date(todayStart);
-    currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay());
+    currentWeekStart.setDate(
+      currentWeekStart.getDate() - currentWeekStart.getDay(),
+    );
     const previousWeekStart = new Date(currentWeekStart);
     previousWeekStart.setDate(previousWeekStart.getDate() - 7);
     return {
@@ -128,10 +141,16 @@ function getComparisonRange(
   };
 }
 
-function sumTransactions(transactions: TransaksiGroup[], start: Date, end: Date) {
+function sumTransactions(
+  transactions: TransaksiGroup[],
+  start: Date,
+  end: Date,
+) {
   return transactions.reduce((total, transaction) => {
     const date = new Date(transaction.createdAt);
-    return date >= start && date <= end ? total + transaction.totalBayar : total;
+    return date >= start && date <= end
+      ? total + transaction.totalBayar
+      : total;
   }, 0);
 }
 
@@ -142,6 +161,7 @@ export default function TenantDetailPage() {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [transaksiList, setTransaksiList] = useState<Transaksi[]>([]);
   const [biayaList, setBiayaList] = useState<BiayaOperasional[]>([]);
+  const [dimsumBawaList, setDimsumBawaList] = useState<DimsumBawaOutlet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("Hari Ini");
 
@@ -150,7 +170,9 @@ export default function TenantDetailPage() {
     date.setDate(date.getDate() - 6);
     return date.toISOString().slice(0, 10);
   });
-  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
 
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const date = new Date();
@@ -173,7 +195,7 @@ export default function TenantDetailPage() {
     const fetchTransaksi = async () => {
       try {
         const response = await api.get<{ data?: Transaksi[] }>(
-          `/api/penjualan/outlet/${id}`
+          `/api/penjualan/outlet/${id}`,
         );
         setTransaksiList(response.data.data ?? []);
       } catch (error) {
@@ -185,7 +207,7 @@ export default function TenantDetailPage() {
     const fetchBiayaOperasional = async () => {
       try {
         const response = await api.get<{ data?: BiayaOperasional[] }>(
-          `/api/biaya-operasional/tenant/${id}`
+          `/api/biaya-operasional/tenant/${id}`,
         );
         setBiayaList(response.data.data ?? []);
       } catch (error) {
@@ -194,10 +216,25 @@ export default function TenantDetailPage() {
       }
     };
 
+    const fetchDimsumBawaOutlet = async () => {
+      if (!id) return; // Jangan lakukan fetch jika id belum ada
+      try {
+        const response = await api.get(`/api/dimsum-bawa?outletId=${id}`);
+        setDimsumBawaList(response.data.data ?? []);
+      } catch (error) {
+        console.error("Gagal mengambil data dimsum dibawa outlet:", error);
+      }
+    };
+
     const loadData = async () => {
       if (Number.isInteger(id)) {
         setIsLoading(true);
-        await Promise.all([fetchTenant(), fetchTransaksi(), fetchBiayaOperasional()]);
+        await Promise.all([
+          fetchTenant(),
+          fetchTransaksi(),
+          fetchBiayaOperasional(),
+          fetchDimsumBawaOutlet(),
+        ]);
         setIsLoading(false);
       }
     };
@@ -238,8 +275,7 @@ export default function TenantDetailPage() {
       if (filter === "Bulanan") {
         const [year, month] = selectedMonth.split("-").map(Number);
         return (
-          trxDate.getMonth() === month - 1 &&
-          trxDate.getFullYear() === year
+          trxDate.getMonth() === month - 1 && trxDate.getFullYear() === year
         );
       }
 
@@ -274,10 +310,7 @@ export default function TenantDetailPage() {
 
       if (filter === "Bulanan") {
         const [year, month] = selectedMonth.split("-").map(Number);
-        return (
-          bDate.getMonth() === month - 1 &&
-          bDate.getFullYear() === year
-        );
+        return bDate.getMonth() === month - 1 && bDate.getFullYear() === year;
       }
 
       if (filter === "Custom") {
@@ -293,14 +326,17 @@ export default function TenantDetailPage() {
   }, [biayaList, filter, customStart, customEnd, selectedMonth]);
 
   const totalBiayaOperasional = useMemo(() => {
-    return filteredBiaya.reduce((sum, item) => sum + Number(item.biaya || item.jumlah || 0), 0);
+    return filteredBiaya.reduce(
+      (sum, item) => sum + Number(item.biaya || item.jumlah || 0),
+      0,
+    );
   }, [filteredBiaya]);
 
   const { totalOmset, cashOmset, qrisOmset, cashPercent, qrisPercent } =
     useMemo(() => {
       const total = filteredTransaksi.reduce(
         (sum, trx) => sum + trx.totalBayar,
-        0
+        0,
       );
       const cash = filteredTransaksi
         .filter((trx) => trx.metodePembayaran?.toLowerCase() === "cash")
@@ -321,13 +357,15 @@ export default function TenantDetailPage() {
       };
     }, [filteredTransaksi]);
 
-  // Kalkulasi Cash Bersih Storan (Total Cash dikurangi Biaya Operasional)
   const cashBersihStoran = useMemo(() => {
     return cashOmset - totalBiayaOperasional;
   }, [cashOmset, totalBiayaOperasional]);
 
   const recapProduk = useMemo(() => {
-    const map: Record<string, { namaKategori: string; totalPcs: number; totalPax: number }> = {};
+    const map: Record<
+      string,
+      { namaKategori: string; totalPcs: number; totalPax: number }
+    > = {};
 
     filteredTransaksi.forEach((trx) => {
       trx.items.forEach((item) => {
@@ -357,11 +395,38 @@ export default function TenantDetailPage() {
     return Object.values(map);
   }, [filteredTransaksi]);
 
+  // Kalkulasi Sisa Stok Berdasarkan Akumulasi Dimsum Dibawa Outlet - Terjual
+  const recapSisaStok = useMemo(() => {
+    return dimsumBawaList.map((bawa) => {
+      const terjualItem = recapProduk.find(
+        (r) => r.namaKategori.toLowerCase() === bawa.namaKategori.toLowerCase(),
+      );
+      const totalTerjual = terjualItem ? terjualItem.totalPcs : 0;
+      const sisaStok = Math.max(0, bawa.jumlah_bawa - totalTerjual);
+
+      return {
+        namaKategori: bawa.namaKategori,
+        jumlahBawa: bawa.jumlah_bawa,
+        totalTerjual,
+        sisaStok,
+      };
+    });
+  }, [dimsumBawaList, recapProduk]);
+
   const comparison = useMemo(() => {
-    const range = getComparisonRange(filter, customStart, customEnd, selectedMonth);
+    const range = getComparisonRange(
+      filter,
+      customStart,
+      customEnd,
+      selectedMonth,
+    );
     if (!range) return null;
 
-    const previousOmset = sumTransactions(uniqueTransaksi, range.start, range.end);
+    const previousOmset = sumTransactions(
+      uniqueTransaksi,
+      range.start,
+      range.end,
+    );
     if (previousOmset === 0) {
       return { percent: null, label: range.label };
     }
@@ -370,7 +435,14 @@ export default function TenantDetailPage() {
       percent: Math.round(((totalOmset - previousOmset) / previousOmset) * 100),
       label: range.label,
     };
-  }, [customEnd, customStart, filter, selectedMonth, totalOmset, uniqueTransaksi]);
+  }, [
+    customEnd,
+    customStart,
+    filter,
+    selectedMonth,
+    totalOmset,
+    uniqueTransaksi,
+  ]);
 
   const { chartData, xAxisLabel } = useMemo(() => {
     let groups: { label: string; amount: number }[] = [];
@@ -378,7 +450,15 @@ export default function TenantDetailPage() {
 
     if (filter === "Hari Ini") {
       xLabel = "Jam";
-      const hours = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00"];
+      const hours = [
+        "08:00",
+        "10:00",
+        "12:00",
+        "14:00",
+        "16:00",
+        "18:00",
+        "20:00",
+      ];
       groups = hours.map((h) => ({ label: h, amount: 0 }));
 
       filteredTransaksi.forEach((trx) => {
@@ -487,14 +567,17 @@ export default function TenantDetailPage() {
           </div>
 
           <div className="flex flex-wrap bg-[#F5F6F8] p-1 rounded-xl border border-zinc-200/60 gap-1">
-            {(["Hari Ini", "Mingguan", "Bulanan", "Custom"] as FilterType[]).map((tab) => (
+            {(
+              ["Hari Ini", "Mingguan", "Bulanan", "Custom"] as FilterType[]
+            ).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setFilter(tab)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filter === tab
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  filter === tab
                     ? "bg-[#E52424] text-white shadow-xs"
                     : "text-zinc-500 hover:text-zinc-900"
-                  }`}
+                }`}
               >
                 {tab}
               </button>
@@ -504,7 +587,9 @@ export default function TenantDetailPage() {
 
         {filter === "Bulanan" && (
           <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-zinc-100 text-xs">
-            <span className="font-semibold text-zinc-600">Pilih Bulan Laporan:</span>
+            <span className="font-semibold text-zinc-600">
+              Pilih Bulan Laporan:
+            </span>
             <input
               type="month"
               value={selectedMonth}
@@ -516,7 +601,9 @@ export default function TenantDetailPage() {
 
         {filter === "Custom" && (
           <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-zinc-100 text-xs">
-            <span className="font-semibold text-zinc-600">Pilih Rentang Tanggal:</span>
+            <span className="font-semibold text-zinc-600">
+              Pilih Rentang Tanggal:
+            </span>
             <input
               type="date"
               value={customStart}
@@ -546,19 +633,21 @@ export default function TenantDetailPage() {
         <div className="md:col-span-1 bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs flex flex-col justify-between space-y-4">
           <div>
             <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-              Total Omset ({filter === "Bulanan" ? `Bulan ${selectedMonth}` : filter})
+              Total Omset (
+              {filter === "Bulanan" ? `Bulan ${selectedMonth}` : filter})
             </span>
             <h2 className="text-3xl font-extrabold text-[#212121] mt-1">
               Rp {totalOmset.toLocaleString("id-ID")}
             </h2>
             {comparison && (
               <div
-                className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${comparison.percent === null
+                className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                  comparison.percent === null
                     ? "bg-zinc-100 text-zinc-500"
                     : comparison.percent >= 0
                       ? "bg-emerald-50 text-emerald-600"
                       : "bg-red-50 text-red-600"
-                  }`}
+                }`}
               >
                 {comparison.percent === null ? (
                   <span>Belum ada data {comparison.label}</span>
@@ -583,7 +672,9 @@ export default function TenantDetailPage() {
             <div className="flex justify-between items-center bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#1E88E5]"></span>
-                <span className="text-xs font-semibold text-zinc-600">Cash</span>
+                <span className="text-xs font-semibold text-zinc-600">
+                  Cash
+                </span>
               </div>
               <span className="text-xs font-bold text-[#212121]">
                 Rp {cashOmset.toLocaleString("id-ID")}
@@ -593,18 +684,21 @@ export default function TenantDetailPage() {
             <div className="flex justify-between items-center bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#E52424]"></span>
-                <span className="text-xs font-semibold text-zinc-600">QRIS</span>
+                <span className="text-xs font-semibold text-zinc-600">
+                  QRIS
+                </span>
               </div>
               <span className="text-xs font-bold text-[#212121]">
                 Rp {qrisOmset.toLocaleString("id-ID")}
               </span>
             </div>
 
-            {/* BARIS TAMBAHAN: Cash Bersih Storan */}
             <div className="flex justify-between items-center bg-emerald-50 p-3 rounded-xl border border-emerald-200/60 pt-2.5">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
-                <span className="text-xs font-bold text-emerald-900">Cash Bersih Storan</span>
+                <span className="text-xs font-bold text-emerald-900">
+                  Cash Bersih Storan
+                </span>
               </div>
               <span className="text-xs font-extrabold text-emerald-700">
                 Rp {cashBersihStoran.toLocaleString("id-ID")}
@@ -620,7 +714,8 @@ export default function TenantDetailPage() {
                 Grafik Pertumbuhan Omset
               </p>
               <p className="text-[11px] text-zinc-400">
-                Visualisasi tren penjualan tenant ini ({filter === "Bulanan" ? selectedMonth : filter})
+                Visualisasi tren penjualan tenant ini (
+                {filter === "Bulanan" ? selectedMonth : filter})
               </p>
             </div>
             <div className="flex items-center gap-1.5 text-xs">
@@ -678,8 +773,11 @@ export default function TenantDetailPage() {
                 {chartData.map((item, idx) => (
                   <span
                     key={idx}
-                    className={`flex-1 text-center text-[9px] font-semibold text-zinc-500 truncate ${filter === "Bulanan" && idx % 3 !== 0 ? "hidden md:inline" : ""
-                      }`}
+                    className={`flex-1 text-center text-[9px] font-semibold text-zinc-500 truncate ${
+                      filter === "Bulanan" && idx % 3 !== 0
+                        ? "hidden md:inline"
+                        : ""
+                    }`}
                   >
                     {item.label}
                   </span>
@@ -698,8 +796,18 @@ export default function TenantDetailPage() {
         <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-amber-50 text-amber-600 rounded-lg flex items-center justify-center">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
               </svg>
             </div>
             <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
@@ -719,8 +827,8 @@ export default function TenantDetailPage() {
           <div className="divide-y divide-zinc-100">
             {filteredBiaya.map((item: any) => {
               const nominal = Number(item.biaya || item.jumlah || 0);
-              // Mengambil teks keterangan dari berbagai kemungkinan nama kolom backend
-              const keteranganTeks = item.deskripsi
+              const keteranganTeks =
+                item.keterangan || item.deskripsi || "Biaya Operasional";
               const authorName = item.user?.name || item.user?.username;
               return (
                 <div
@@ -736,10 +844,13 @@ export default function TenantDetailPage() {
                         day: "2-digit",
                         month: "short",
                         year: "numeric",
-                      })} · {new Date(item.createdAt).toLocaleTimeString("id-ID", {
+                      })}{" "}
+                      ·{" "}
+                      {new Date(item.createdAt).toLocaleTimeString("id-ID", {
                         hour: "2-digit",
                         minute: "2-digit",
-                      })} WIB {authorName ? `· Oleh: ${authorName}` : ""}
+                      })}{" "}
+                      WIB {authorName ? `· Oleh: ${authorName}` : ""}
                     </p>
                   </div>
 
@@ -755,17 +866,141 @@ export default function TenantDetailPage() {
         )}
       </div>
 
+      {/* INPUT STOK DIMSUM DIBAWA (AKUMULASI PER OUTLET) */}
+      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                />
+              </svg>
+            </div>
+            <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
+              Akumulasi Stok Dimsum Dibawa (Per Outlet)
+            </h2>
+          </div>
+          <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
+            {dimsumBawaList.length} Kategori
+          </span>
+        </div>
+
+        {dimsumBawaList.length === 0 ? (
+          <p className="text-xs text-zinc-400 py-6 text-center italic">
+            Belum ada data stok dimsum dibawa yang diinput oleh kasir di outlet
+            ini hari ini.
+          </p>
+        ) : (
+          <div className="divide-y divide-zinc-100">
+            {dimsumBawaList.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between py-3 first:pt-0 last:pb-0 text-xs"
+              >
+                <p className="font-bold text-[#212121] text-sm">
+                  {item.namaKategori}
+                </p>
+                <span className="bg-emerald-50 text-emerald-700 font-mono text-xs font-bold px-3 py-1.5 rounded-xl border border-emerald-200/60">
+                  {item.jumlah_bawa} Pcs
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* SISA STOK DIMSUM HARI INI */}
+      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+            </div>
+            <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
+              Sisa Stok Dimsum Hari Ini (Outlet)
+            </h2>
+          </div>
+          <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
+            {recapSisaStok.length} Kategori
+          </span>
+        </div>
+
+        {recapSisaStok.length === 0 ? (
+          <p className="text-xs text-zinc-400 py-6 text-center italic">
+            Belum ada kalkulasi sisa stok untuk outlet ini.
+          </p>
+        ) : (
+          <div className="divide-y divide-zinc-100">
+            {recapSisaStok.map((item) => (
+              <div
+                key={item.namaKategori}
+                className="flex items-center justify-between py-3 first:pt-0 last:pb-0 text-xs"
+              >
+                <div className="space-y-0.5">
+                  <p className="font-bold text-[#212121] text-sm">
+                    {item.namaKategori}
+                  </p>
+                  <p className="text-[11px] font-medium text-zinc-400">
+                    Dibawa: {item.jumlahBawa} Pcs | Terjual: {item.totalTerjual}{" "}
+                    Pcs
+                  </p>
+                </div>
+
+                <span className="bg-[#212121] text-white font-mono text-xs font-bold px-3 py-1.5 rounded-xl shadow-2xs">
+                  {item.sisaStok}{" "}
+                  <span className="text-[10px] font-normal text-zinc-300">
+                    Pcs
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* REKAP JENIS DIMSUM (KATEGORI) */}
       <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
         <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                />
               </svg>
             </div>
             <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
-              Rekap Jenis Dimsum ({filter === "Bulanan" ? selectedMonth : filter})
+              Rekap Jenis Dimsum (
+              {filter === "Bulanan" ? selectedMonth : filter})
             </h2>
           </div>
           <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
@@ -795,7 +1030,10 @@ export default function TenantDetailPage() {
 
                 <div className="flex items-center gap-1">
                   <span className="bg-[#212121] text-white font-mono text-xs font-bold px-3 py-1.5 rounded-xl shadow-2xs">
-                    {item.totalPcs} <span className="text-[10px] font-normal text-zinc-300">Pcs</span>
+                    {item.totalPcs}{" "}
+                    <span className="text-[10px] font-normal text-zinc-300">
+                      Pcs
+                    </span>
                   </span>
                 </div>
               </div>
@@ -857,7 +1095,9 @@ export default function TenantDetailPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-3 h-3 rounded-full bg-[#1E88E5]"></span>
-                  <span className="font-semibold text-zinc-600 text-xs">Cash</span>
+                  <span className="font-semibold text-zinc-600 text-xs">
+                    Cash
+                  </span>
                 </div>
                 <span className="font-bold text-[#212121] text-xs">
                   {cashPercent}%
@@ -866,7 +1106,9 @@ export default function TenantDetailPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-3 h-3 rounded-full bg-[#E52424]"></span>
-                  <span className="font-semibold text-zinc-600 text-xs">QRIS</span>
+                  <span className="font-semibold text-zinc-600 text-xs">
+                    QRIS
+                  </span>
                 </div>
                 <span className="font-bold text-[#212121] text-xs">
                   {qrisPercent}%
@@ -879,7 +1121,9 @@ export default function TenantDetailPage() {
         <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
           <div className="flex justify-between items-center">
             <div>
-              <h2 className="text-sm font-bold text-[#212121]">Data Karyawan</h2>
+              <h2 className="text-sm font-bold text-[#212121]">
+                Data Karyawan
+              </h2>
               <p className="text-[11px] text-zinc-400 mt-0.5">
                 Karyawan yang bertugas di tenant ini
               </p>
@@ -923,9 +1167,14 @@ export default function TenantDetailPage() {
       <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-bold text-[#212121]">Riwayat Transaksi</h2>
+            <h2 className="text-sm font-bold text-[#212121]">
+              Riwayat Transaksi
+            </h2>
             <p className="text-[11px] text-zinc-400 mt-0.5">
-              Transaksi tenant pada periode {filter === "Bulanan" ? `bulan ${selectedMonth}` : filter.toLowerCase()}
+              Transaksi tenant pada periode{" "}
+              {filter === "Bulanan"
+                ? `bulan ${selectedMonth}`
+                : filter.toLowerCase()}
             </p>
           </div>
           <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-500 shrink-0">
@@ -940,13 +1189,22 @@ export default function TenantDetailPage() {
         ) : (
           <div className="divide-y divide-zinc-100">
             {filteredTransaksi.map((trx) => (
-              <div key={trx.invoice} className="py-3 flex items-center justify-between gap-3">
+              <div
+                key={trx.invoice}
+                className="py-3 flex items-center justify-between gap-3"
+              >
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-[#212121] truncate">{trx.invoice}</p>
+                  <p className="text-xs font-bold text-[#212121] truncate">
+                    {trx.invoice}
+                  </p>
                   <div className="mt-1 space-y-0.5">
                     {trx.items.map((item) => (
-                      <p key={item.id} className="text-[11px] text-zinc-600 truncate">
-                        {item.produk?.namaProduk || item.namaProduk || "Produk"} · {item.pcs} pcs · {item.pax} pax
+                      <p
+                        key={item.id}
+                        className="text-[11px] text-zinc-600 truncate"
+                      >
+                        {item.produk?.namaProduk || item.namaProduk || "Produk"}{" "}
+                        · {item.pcs} pcs · {item.pax} pax
                       </p>
                     ))}
                   </div>
@@ -955,10 +1213,13 @@ export default function TenantDetailPage() {
                       day: "2-digit",
                       month: "short",
                       year: "numeric",
-                    })} · {new Date(trx.createdAt).toLocaleTimeString("id-ID", {
+                    })}{" "}
+                    ·{" "}
+                    {new Date(trx.createdAt).toLocaleTimeString("id-ID", {
                       hour: "2-digit",
                       minute: "2-digit",
-                    })} WIB
+                    })}{" "}
+                    WIB
                   </p>
                 </div>
                 <div className="text-right shrink-0">
