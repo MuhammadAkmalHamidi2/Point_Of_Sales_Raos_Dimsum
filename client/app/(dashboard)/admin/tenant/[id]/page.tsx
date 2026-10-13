@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
@@ -190,6 +190,51 @@ export default function TenantDetailPage() {
     return `${year}-${month}`;
   });
 
+  // Helper untuk mendapatkan rentang tanggal format YYYY-MM-DD berdasarkan filter aktif
+  const getDateRange = useCallback(() => {
+    const now = new Date();
+    const todayStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+
+    if (filter === "Hari Ini") {
+      return { startDate: todayStr, endDate: todayStr };
+    }
+
+    if (filter === "Mingguan") {
+      const firstDayOfWeek = new Date(now);
+      firstDayOfWeek.setDate(now.getDate() - now.getDay());
+      const startStr = firstDayOfWeek.toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+      return { startDate: startStr, endDate: todayStr };
+    }
+
+    if (filter === "Bulanan") {
+      const [year, month] = selectedMonth.split("-").map(Number);
+      const firstDay = new Date(year, month - 1, 1).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+      const lastDay = new Date(year, month, 0).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+      return { startDate: firstDay, endDate: lastDay };
+    }
+
+    if (filter === "Custom") {
+      return { startDate: customStart, endDate: customEnd };
+    }
+
+    return { startDate: todayStr, endDate: todayStr };
+  }, [filter, selectedMonth, customStart, customEnd]);
+
+  // Fetch Dimsum Bawa Outlet berdasarkan rentang tanggal filter
+  const fetchDimsumBawaOutlet = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { startDate, endDate } = getDateRange();
+      const response = await api.get<{ data?: DimsumBawaOutlet[] }>(
+        `/api/dimsum-bawa/outlet/${id}?startDate=${startDate}&endDate=${endDate}`,
+      );
+      setDimsumBawaList(response.data.data ?? []);
+    } catch (error) {
+      console.error("Gagal mengambil data dimsum dibawa outlet:", error);
+      setDimsumBawaList([]);
+    }
+  }, [id, getDateRange]);
+
   useEffect(() => {
     const fetchTenant = async () => {
       try {
@@ -225,19 +270,6 @@ export default function TenantDetailPage() {
       }
     };
 
-    const fetchDimsumBawaOutlet = async () => {
-      if (!id) return;
-      try {
-        const response = await api.get<{ data?: DimsumBawaOutlet[] }>(
-          `/api/dimsum-bawa/outlet/${id}`,
-        );
-        setDimsumBawaList(response.data.data ?? []);
-      } catch (error) {
-        console.error("Gagal mengambil data dimsum dibawa outlet:", error);
-        setDimsumBawaList([]);
-      }
-    };
-
     const loadData = async () => {
       if (Number.isInteger(id)) {
         setIsLoading(true);
@@ -252,7 +284,7 @@ export default function TenantDetailPage() {
     };
 
     void loadData();
-  }, [id]);
+  }, [id, fetchDimsumBawaOutlet]);
 
   const uniqueTransaksi = useMemo(() => {
     const groups: TransaksiGroup[] = [];
@@ -344,30 +376,24 @@ export default function TenantDetailPage() {
     );
   }, [filteredBiaya]);
 
-  const { totalOmset, cashOmset, qrisOmset, cashPercent, qrisPercent } =
-    useMemo(() => {
-      const total = filteredTransaksi.reduce(
-        (sum, trx) => sum + trx.totalBayar,
-        0,
-      );
-      const cash = filteredTransaksi
-        .filter((trx) => trx.metodePembayaran?.toLowerCase() === "cash")
-        .reduce((sum, trx) => sum + trx.totalBayar, 0);
-      const qris = filteredTransaksi
-        .filter((trx) => trx.metodePembayaran?.toLowerCase() === "qris")
-        .reduce((sum, trx) => sum + trx.totalBayar, 0);
+  const { totalOmset, cashOmset, qrisOmset } = useMemo(() => {
+    const total = filteredTransaksi.reduce(
+      (sum, trx) => sum + trx.totalBayar,
+      0,
+    );
+    const cash = filteredTransaksi
+      .filter((trx) => trx.metodePembayaran?.toLowerCase() === "cash")
+      .reduce((sum, trx) => sum + trx.totalBayar, 0);
+    const qris = filteredTransaksi
+      .filter((trx) => trx.metodePembayaran?.toLowerCase() === "qris")
+      .reduce((sum, trx) => sum + trx.totalBayar, 0);
 
-      const cPercent = total > 0 ? Math.round((cash / total) * 100) : 0;
-      const qPercent = total > 0 ? 100 - cPercent : 0;
-
-      return {
-        totalOmset: total,
-        cashOmset: cash,
-        qrisOmset: qris,
-        cashPercent: cPercent,
-        qrisPercent: qPercent,
-      };
-    }, [filteredTransaksi]);
+    return {
+      totalOmset: total,
+      cashOmset: cash,
+      qrisOmset: qris,
+    };
+  }, [filteredTransaksi]);
 
   const cashBersihStoran = useMemo(() => {
     return cashOmset - totalBiayaOperasional;
@@ -407,7 +433,7 @@ export default function TenantDetailPage() {
     return Object.values(map);
   }, [filteredTransaksi]);
 
-  // Akumulasi/Gabungan Dimsum Dibawa per Outlet (Gabungkan input dari multiple karyawan/kasir)
+  // Akumulasi Dimsum Dibawa per Outlet
   const dimsumBawaGrouped = useMemo(() => {
     const map: Record<
       string,
@@ -456,7 +482,6 @@ export default function TenantDetailPage() {
       }
     > = {};
 
-    // 1. Akumulasi Dimsum Dibawa per Outlet
     dimsumBawaList.forEach((bawa) => {
       const catId = bawa.categoryId || bawa.category_id || bawa.category?.id;
       const catName =
@@ -481,7 +506,6 @@ export default function TenantDetailPage() {
       map[key].jumlahBawa += pcs;
     });
 
-    // 2. Akumulasi Terjual dari Transaksi Outlet
     filteredTransaksi.forEach((trx) => {
       trx.items.forEach((item) => {
         const catObj = item.produk?.category;
@@ -510,7 +534,6 @@ export default function TenantDetailPage() {
       });
     });
 
-    // 3. Hitung Sisa Stok (Dibawa - Terjual)
     return Object.values(map).map((item) => ({
       ...item,
       sisaStok: item.jumlahBawa - item.totalTerjual,
@@ -678,8 +701,8 @@ export default function TenantDetailPage() {
                 key={tab}
                 onClick={() => setFilter(tab)}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filter === tab
-                  ? "bg-[#E52424] text-white shadow-xs"
-                  : "text-zinc-500 hover:text-zinc-900"
+                    ? "bg-[#E52424] text-white shadow-xs"
+                    : "text-zinc-500 hover:text-zinc-900"
                   }`}
               >
                 {tab}
@@ -745,10 +768,10 @@ export default function TenantDetailPage() {
             {comparison && (
               <div
                 className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${comparison.percent === null
-                  ? "bg-zinc-100 text-zinc-500"
-                  : comparison.percent >= 0
-                    ? "bg-emerald-50 text-emerald-600"
-                    : "bg-red-50 text-red-600"
+                    ? "bg-zinc-100 text-zinc-500"
+                    : comparison.percent >= 0
+                      ? "bg-emerald-50 text-emerald-600"
+                      : "bg-red-50 text-red-600"
                   }`}
               >
                 {comparison.percent === null ? (
@@ -875,9 +898,7 @@ export default function TenantDetailPage() {
                 {chartData.map((item, idx) => (
                   <span
                     key={idx}
-                    className={`flex-1 text-center text-[9px] font-semibold text-zinc-500 truncate ${filter === "Bulanan" && idx % 3 !== 0
-                      ? "hidden md:inline"
-                      : ""
+                    className={`flex-1 text-center text-[9px] font-semibold text-zinc-500 truncate ${filter === "Bulanan" && idx % 3 !== 0 ? "hidden md:inline" : ""
                       }`}
                   >
                     {item.label}
@@ -968,7 +989,6 @@ export default function TenantDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-
         <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
           <div className="flex justify-between items-center">
             <div>
@@ -1014,7 +1034,6 @@ export default function TenantDetailPage() {
         </div>
       </div>
 
-
       {/* AKUMULASI STOK DIMSUM DIBAWA (PER OUTLET) */}
       <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
         <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
@@ -1035,7 +1054,7 @@ export default function TenantDetailPage() {
               </svg>
             </div>
             <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
-              Akumulasi Stok Dimsum Dibawa
+              Akumulasi Stok Dimsum Dibawa ({filter === "Bulanan" ? selectedMonth : filter})
             </h2>
           </div>
           <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
@@ -1045,8 +1064,7 @@ export default function TenantDetailPage() {
 
         {dimsumBawaGrouped.length === 0 ? (
           <p className="text-xs text-zinc-400 py-6 text-center italic">
-            Belum ada data stok dimsum dibawa yang diinput oleh kasir di outlet
-            ini hari ini.
+            Belum ada data stok dimsum dibawa yang diinput pada periode ini.
           </p>
         ) : (
           <div className="divide-y divide-zinc-100">
@@ -1065,7 +1083,7 @@ export default function TenantDetailPage() {
         )}
       </div>
 
-      {/* SISA STOK DIMSUM HARI INI */}
+      {/* SISA STOK DIMSUM */}
       <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
         <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
           <div className="flex items-center gap-2">
@@ -1085,7 +1103,7 @@ export default function TenantDetailPage() {
               </svg>
             </div>
             <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
-              Sisa Stok Dimsum Hari Ini 
+              Sisa Stok Dimsum ({filter === "Bulanan" ? selectedMonth : filter})
             </h2>
           </div>
           <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
@@ -1095,7 +1113,7 @@ export default function TenantDetailPage() {
 
         {recapSisaStok.length === 0 ? (
           <p className="text-xs text-zinc-400 py-6 text-center italic">
-            Belum ada kalkulasi sisa stok untuk outlet ini.
+            Belum ada kalkulasi sisa stok untuk outlet ini pada periode ini.
           </p>
         ) : (
           <div className="divide-y divide-zinc-100">
@@ -1116,8 +1134,8 @@ export default function TenantDetailPage() {
 
                 <span
                   className={`font-mono text-xs font-bold px-3 py-1.5 rounded-xl ${item.sisaStok < 0
-                    ? "bg-red-100 text-red-700 border border-red-200"
-                    : "bg-[#212121] text-white shadow-2xs"
+                      ? "bg-red-100 text-red-700 border border-red-200"
+                      : "bg-[#212121] text-white shadow-2xs"
                     }`}
                 >
                   {item.sisaStok}{" "}
@@ -1134,7 +1152,7 @@ export default function TenantDetailPage() {
         )}
       </div>
 
-      {/* REKAP JENIS DIMSUM (KATEGORI) */}
+      {/* REKAP PENJUALAN */}
       <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
         <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
           <div className="flex items-center gap-2">
@@ -1154,8 +1172,7 @@ export default function TenantDetailPage() {
               </svg>
             </div>
             <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
-              Rekap PENJUALAN (
-              {filter === "Bulanan" ? selectedMonth : filter})
+              Rekap PENJUALAN ({filter === "Bulanan" ? selectedMonth : filter})
             </h2>
           </div>
           <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">

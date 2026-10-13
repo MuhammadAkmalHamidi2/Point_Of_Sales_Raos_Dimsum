@@ -124,7 +124,7 @@ const getDimsumBawaHariIni = async (req, res) => {
 const getAllDimsumBawaPerOutletId = async (req, res) => {
   try {
     const outletId = req.params.outletId || req.query.outletId;
-    const { tanggal } = req.query;
+    const { tanggal, startDate, endDate } = req.query;
 
     if (!outletId) {
       return res.status(400).json({
@@ -139,8 +139,16 @@ const getAllDimsumBawaPerOutletId = async (req, res) => {
 
     const whereClause = { outlet_id: outletId };
 
-    // Set default tanggal ke hari ini jika tidak ada filter query tanggal
-    whereClause.tanggal = tanggal || todayStr;
+    // Dukungan filter rentang tanggal (startDate & endDate) atau tanggal tunggal
+    if (startDate && endDate) {
+      whereClause.tanggal = {
+        [Op.between]: [startDate, endDate],
+      };
+    } else if (tanggal) {
+      whereClause.tanggal = tanggal;
+    } else {
+      whereClause.tanggal = todayStr;
+    }
 
     const list = await DimsumBawa.findAll({
       where: whereClause,
