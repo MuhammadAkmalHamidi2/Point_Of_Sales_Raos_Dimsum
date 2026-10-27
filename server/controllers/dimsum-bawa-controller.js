@@ -1,3 +1,4 @@
+const {Op} = require('sequelize')
 const { DimsumBawa, category } = require("../models");
 
 // 1. Buat atau Update Dimsum Dibawa per Kasir/Karyawan

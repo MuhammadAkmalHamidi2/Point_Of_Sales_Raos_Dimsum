@@ -27,28 +27,37 @@ function parseDate(value, fallback) {
 }
 
 function getPeriod(filter, start, end) {
-  const today = startOfDay(new Date());
-  let periodStart = today;
+  const today = new Date();
+  let periodStart = startOfDay(today);
   let periodEnd = endOfDay(today);
   let unit = "day";
 
   if (filter === "Harian") {
+    // Hari Ini (00:00 s/d 23:59)
+    periodStart = startOfDay(today);
+    periodEnd = endOfDay(today);
+    unit = "hour";
+  } else if (filter === "Mingguan") {
+    // Minggu Ini (Senin s/d Minggu)
     const day = today.getDay();
     const mondayOffset = day === 0 ? -6 : 1 - day;
+    periodStart = startOfDay(today);
     periodStart.setDate(today.getDate() + mondayOffset);
-    periodEnd = endOfDay(new Date(periodStart));
-    periodEnd.setDate(periodStart.getDate() + 6);
-  } else if (filter === "Mingguan") {
+    const sunday = new Date(periodStart);
+    sunday.setDate(periodStart.getDate() + 6);
+    periodEnd = endOfDay(sunday);
+    unit = "day";
+  } else if (filter === "Bulanan") {
+    // Bulan Ini (Tanggal 1 s/d akhir bulan)
     periodStart = new Date(today.getFullYear(), today.getMonth(), 1);
     periodEnd = endOfDay(new Date(today.getFullYear(), today.getMonth() + 1, 0));
     unit = "week";
-  } else if (filter === "Bulanan") {
-    periodStart = new Date(today.getFullYear(), 0, 1);
-    periodEnd = endOfDay(new Date(today.getFullYear(), 11, 31));
-    unit = "month";
   } else if (filter === "Custom") {
     periodStart = startOfDay(start);
     periodEnd = endOfDay(end < periodStart ? periodStart : end);
+    const diffTime = Math.abs(periodEnd - periodStart);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    unit = diffDays > 31 ? "month" : "day";
   } else {
     throw new Error("Filter harus Harian, Mingguan, Bulanan, atau Custom.");
   }
@@ -56,21 +65,7 @@ function getPeriod(filter, start, end) {
   return { periodStart, periodEnd, unit };
 }
 
-function getBucket(date, unit) {
-  if (unit === "month") return date.getMonth();
-  if (unit === "week") return Math.floor((date.getDate() - 1) / 7);
-  return formatDate(date);
-}
-
-function getBucketLabel(date, unit) {
-  if (unit === "month") {
-    return date.toLocaleDateString("id-ID", { month: "short" });
-  }
-  if (unit === "week") return `Minggu ${Math.floor((date.getDate() - 1) / 7) + 1}`;
-  return date.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
-}
-
-function summarize(rows, periodStart, periodEnd, unit) {
+function summarize(rows, periodStart, periodEnd, unit, filter) {
   const invoices = new Map();
   rows.forEach((row) => {
     if (!invoices.has(row.invoice)) {
@@ -84,28 +79,68 @@ function summarize(rows, periodStart, periodEnd, unit) {
 
   const summary = { totalOmset: 0, cashAmount: 0, qrisAmount: 0 };
   const buckets = new Map();
+
   invoices.forEach((invoice) => {
     summary.totalOmset += invoice.amount;
     if (invoice.payment === "cash") summary.cashAmount += invoice.amount;
     if (invoice.payment === "qris") summary.qrisAmount += invoice.amount;
 
-    const key = getBucket(invoice.date, unit);
-    const bucket = buckets.get(key) || { date: invoice.date, amount: 0 };
-    bucket.amount += invoice.amount;
-    buckets.set(key, bucket);
+    let key;
+    const date = invoice.date;
+    if (unit === "hour") {
+      const hour = date.getHours();
+      let slotHour = Math.floor((hour - 8) / 2) * 2 + 8;
+      if (slotHour < 8) slotHour = 8;
+      if (slotHour > 20) slotHour = 20;
+      key = `${String(slotHour).padStart(2, "0")}:00`;
+    } else if (unit === "day") {
+      key = formatDate(date);
+    } else if (unit === "week") {
+      key = Math.min(Math.floor((date.getDate() - 1) / 7), 3);
+    } else {
+      key = formatDate(date);
+    }
+
+    buckets.set(key, (buckets.get(key) || 0) + invoice.amount);
   });
 
-  const chart = [];
-  const cursor = new Date(periodStart);
-  while (cursor <= periodEnd) {
-    const key = getBucket(cursor, unit);
-    if (!chart.some((item) => item.key === key)) {
-      chart.push({ key, label: getBucketLabel(cursor, unit), amount: buckets.get(key)?.amount || 0 });
+  let chart = [];
+
+  if (filter === "Harian" || unit === "hour") {
+    const hours = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00"];
+    chart = hours.map((h) => ({
+      label: h,
+      amount: buckets.get(h) || 0,
+    }));
+  } else if (filter === "Mingguan" || unit === "day") {
+    const cursor = new Date(periodStart);
+    while (cursor <= periodEnd) {
+      const k = formatDate(cursor);
+      const label = cursor.toLocaleDateString("id-ID", { weekday: "short" });
+      chart.push({
+        label,
+        amount: buckets.get(k) || 0,
+      });
+      cursor.setDate(cursor.getDate() + 1);
     }
-    cursor.setDate(cursor.getDate() + (unit === "month" ? 1 : 1));
+  } else if (filter === "Bulanan" || unit === "week") {
+    const weekLabels = ["Minggu 1", "Minggu 2", "Minggu 3", "Minggu 4"];
+    chart = weekLabels.map((label, idx) => ({
+      label,
+      amount: buckets.get(idx) || 0,
+    }));
+  } else {
+    const cursor = new Date(periodStart);
+    while (cursor <= periodEnd) {
+      const k = formatDate(cursor);
+      chart.push({
+        label: cursor.toLocaleDateString("id-ID", { day: "numeric", month: "short" }),
+        amount: buckets.get(k) || 0,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
   }
 
-  if (unit === "week") chart.splice(4);
   const maxAmount = Math.max(...chart.map((item) => item.amount), 0);
   return {
     ...summary,
@@ -140,7 +175,7 @@ async function getDashboard(req, res) {
         })
       : [];
 
-    const summary = summarize(rows, periodStart, periodEnd, unit);
+    const summary = summarize(rows, periodStart, periodEnd, unit, filter);
     return res.status(200).json({
       status: true,
       message: "Berhasil mengambil data dashboard",

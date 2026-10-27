@@ -126,7 +126,9 @@ function getComparisonRange(
   }
 
   if (filter === "Bulanan") {
+    if (!selectedMonth || !selectedMonth.includes("-")) return null;
     const [year, month] = selectedMonth.split("-").map(Number);
+    if (Number.isNaN(year) || Number.isNaN(month)) return null;
     const prevMonthStart = new Date(year, month - 2, 1);
     const currMonthStart = new Date(year, month - 1, 1);
     return {
@@ -190,7 +192,7 @@ export default function TenantDetailPage() {
     return `${year}-${month}`;
   });
 
-  // Helper untuk mendapatkan rentang tanggal format YYYY-MM-DD berdasarkan filter aktif
+  // Helper untuk mendapatkan rentang tanggal format YYYY-MM-DD berdasarkan filter aktif (aman dari nilai kosong)
   const getDateRange = useCallback(() => {
     const now = new Date();
     const todayStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
@@ -207,13 +209,22 @@ export default function TenantDetailPage() {
     }
 
     if (filter === "Bulanan") {
+      if (!selectedMonth || !selectedMonth.includes("-")) {
+        return { startDate: todayStr, endDate: todayStr };
+      }
       const [year, month] = selectedMonth.split("-").map(Number);
+      if (Number.isNaN(year) || Number.isNaN(month)) {
+        return { startDate: todayStr, endDate: todayStr };
+      }
       const firstDay = new Date(year, month - 1, 1).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
       const lastDay = new Date(year, month, 0).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
       return { startDate: firstDay, endDate: lastDay };
     }
 
     if (filter === "Custom") {
+      if (!customStart || !customEnd) {
+        return { startDate: todayStr, endDate: todayStr };
+      }
       return { startDate: customStart, endDate: customEnd };
     }
 
@@ -222,7 +233,7 @@ export default function TenantDetailPage() {
 
   // Fetch Dimsum Bawa Outlet berdasarkan rentang tanggal filter
   const fetchDimsumBawaOutlet = useCallback(async () => {
-    if (!id) return;
+    if (!id || Number.isNaN(id)) return;
     try {
       const { startDate, endDate } = getDateRange();
       const response = await api.get<{ data?: DimsumBawaOutlet[] }>(
@@ -317,6 +328,7 @@ export default function TenantDetailPage() {
       }
 
       if (filter === "Bulanan") {
+        if (!selectedMonth || !selectedMonth.includes("-")) return true;
         const [year, month] = selectedMonth.split("-").map(Number);
         return (
           trxDate.getMonth() === month - 1 && trxDate.getFullYear() === year
@@ -324,6 +336,7 @@ export default function TenantDetailPage() {
       }
 
       if (filter === "Custom") {
+        if (!customStart || !customEnd) return true;
         const start = new Date(customStart);
         start.setHours(0, 0, 0, 0);
         const end = new Date(customEnd);
@@ -353,11 +366,13 @@ export default function TenantDetailPage() {
       }
 
       if (filter === "Bulanan") {
+        if (!selectedMonth || !selectedMonth.includes("-")) return true;
         const [year, month] = selectedMonth.split("-").map(Number);
         return bDate.getMonth() === month - 1 && bDate.getFullYear() === year;
       }
 
       if (filter === "Custom") {
+        if (!customStart || !customEnd) return true;
         const start = new Date(customStart);
         start.setHours(0, 0, 0, 0);
         const end = new Date(customEnd);
@@ -606,21 +621,25 @@ export default function TenantDetailPage() {
       });
     } else if (filter === "Bulanan") {
       xLabel = "Tanggal dalam Bulan Ini";
-      const [year, month] = selectedMonth.split("-").map(Number);
-      const daysInMonth = new Date(year, month, 0).getDate();
+      if (!selectedMonth || !selectedMonth.includes("-")) {
+        groups = [{ label: "-", amount: 0 }];
+      } else {
+        const [year, month] = selectedMonth.split("-").map(Number);
+        const daysInMonth = new Date(year, month, 0).getDate();
 
-      groups = Array.from({ length: daysInMonth }, (_, i) => ({
-        label: String(i + 1),
-        amount: 0,
-      }));
+        groups = Array.from({ length: daysInMonth }, (_, i) => ({
+          label: String(i + 1),
+          amount: 0,
+        }));
 
-      filteredTransaksi.forEach((trx) => {
-        const dateObj = new Date(trx.createdAt);
-        const dayIdx = dateObj.getDate() - 1;
-        if (groups[dayIdx]) {
-          groups[dayIdx].amount += trx.totalBayar;
-        }
-      });
+        filteredTransaksi.forEach((trx) => {
+          const dateObj = new Date(trx.createdAt);
+          const dayIdx = dateObj.getDate() - 1;
+          if (groups[dayIdx]) {
+            groups[dayIdx].amount += trx.totalBayar;
+          }
+        });
+      }
     } else {
       xLabel = "Tanggal";
       const mapDates = new Map<string, number>();
@@ -850,7 +869,7 @@ export default function TenantDetailPage() {
           </div>
 
           <div className="pt-2">
-            <div className="flex h-52">
+            <div className="flex h-64">
               <div className="flex items-center gap-1.5 pr-2.5 border-r border-zinc-200">
                 <span className="text-[10px] font-bold text-zinc-400 tracking-wider uppercase -rotate-90 whitespace-nowrap -ml-3">
                   Omset
@@ -1083,6 +1102,68 @@ export default function TenantDetailPage() {
         )}
       </div>
 
+      {/* REKAP PENJUALAN */}
+      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                />
+              </svg>
+            </div>
+            <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
+              Rekap PENJUALAN ({filter === "Bulanan" ? selectedMonth : filter})
+            </h2>
+          </div>
+          <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
+            {recapProduk.length} Kategori
+          </span>
+        </div>
+
+        {recapProduk.length === 0 ? (
+          <p className="text-xs text-zinc-400 py-6 text-center italic">
+            Belum ada data rekap kategori keluar pada periode ini.
+          </p>
+        ) : (
+          <div className="divide-y divide-zinc-100">
+            {recapProduk.map((item) => (
+              <div
+                key={item.namaKategori}
+                className="flex items-center justify-between py-3 first:pt-0 last:pb-0 text-xs"
+              >
+                <div className="space-y-0.5">
+                  <p className="font-bold text-[#212121] leading-tight text-sm">
+                    {item.namaKategori}
+                  </p>
+                  <p className="text-[11px] font-medium text-zinc-400">
+                    Terjual dalam {item.totalPax} Pax
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <span className="bg-[#212121] text-white font-mono text-xs font-bold px-3 py-1.5 rounded-xl shadow-2xs">
+                    {item.totalPcs}{" "}
+                    <span className="text-[10px] font-normal text-zinc-300">
+                      Pcs
+                    </span>
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* SISA STOK DIMSUM */}
       <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
         <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
@@ -1152,68 +1233,6 @@ export default function TenantDetailPage() {
         )}
       </div>
 
-      {/* REKAP PENJUALAN */}
-      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-zinc-100 text-zinc-700 rounded-lg flex items-center justify-center">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                />
-              </svg>
-            </div>
-            <h2 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
-              Rekap PENJUALAN ({filter === "Bulanan" ? selectedMonth : filter})
-            </h2>
-          </div>
-          <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200/80">
-            {recapProduk.length} Kategori
-          </span>
-        </div>
-
-        {recapProduk.length === 0 ? (
-          <p className="text-xs text-zinc-400 py-6 text-center italic">
-            Belum ada data rekap kategori keluar pada periode ini.
-          </p>
-        ) : (
-          <div className="divide-y divide-zinc-100">
-            {recapProduk.map((item) => (
-              <div
-                key={item.namaKategori}
-                className="flex items-center justify-between py-3 first:pt-0 last:pb-0 text-xs"
-              >
-                <div className="space-y-0.5">
-                  <p className="font-bold text-[#212121] leading-tight text-sm">
-                    {item.namaKategori}
-                  </p>
-                  <p className="text-[11px] font-medium text-zinc-400">
-                    Terjual dalam {item.totalPax} Pax
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <span className="bg-[#212121] text-white font-mono text-xs font-bold px-3 py-1.5 rounded-xl shadow-2xs">
-                    {item.totalPcs}{" "}
-                    <span className="text-[10px] font-normal text-zinc-300">
-                      Pcs
-                    </span>
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* RIWAYAT TRANSAKSI */}
       <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-2xs space-y-4">
         <div className="flex items-center justify-between gap-3">
@@ -1249,15 +1268,16 @@ export default function TenantDetailPage() {
                     {trx.invoice}
                   </p>
                   <div className="mt-1 space-y-0.5">
-                    {trx.items.map((item) => (
-                      <p
-                        key={item.id}
-                        className="text-[11px] text-zinc-600 truncate"
-                      >
-                        {item.produk?.namaProduk || item.namaProduk || "Produk"}{" "}
-                        · {item.pcs} pcs · {item.pax} pax
-                      </p>
-                    ))}
+                    {Array.isArray(trx.items) &&
+                      trx.items.map((item) => (
+                        <p
+                          key={item.id}
+                          className="text-[11px] text-zinc-600 truncate"
+                        >
+                          {item.produk?.namaProduk || item.namaProduk || "Produk"}{" "}
+                          · {item.pcs} pcs · {item.pax} pax
+                        </p>
+                      ))}
                   </div>
                   <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
                     {new Date(trx.createdAt).toLocaleDateString("id-ID", {
